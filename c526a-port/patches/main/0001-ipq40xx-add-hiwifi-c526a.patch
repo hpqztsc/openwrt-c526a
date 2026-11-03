@@ -88,7 +88,7 @@ index 29f77ab..aec7c6e 100644
  	mobipromo,cm520-79f|\
  	netgear,lbr20|\
 diff --git a/target/linux/ipq40xx/image/generic.mk b/target/linux/ipq40xx/image/generic.mk
-index 8167391..6836625 100644
+index 8167391..f11ec96 100644
 --- a/target/linux/ipq40xx/image/generic.mk
 +++ b/target/linux/ipq40xx/image/generic.mk
 @@ -1497,3 +1497,28 @@ define Device/zyxel_wre6606
@@ -104,7 +104,7 @@ index 8167391..6836625 100644
 +	SOC := qcom-ipq4019
 +	BLOCKSIZE := 128k
 +	PAGESIZE := 2048
-+	DEVICE_PACKAGES := ipq-wifi-hiwifi-c526a kmod-mt7615e kmod-mt7615-firmware
++	DEVICE_PACKAGES := ipq-wifi-hiwifi-c526a kmod-mt7615e kmod-mt7615-firmware -ath10k-board-qca4019
 +endef
 +
 +define Device/hiwifi_c526a
