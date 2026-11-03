@@ -20,17 +20,29 @@ define Package/ipq-wifi-hiwifi-c526a
   SECTION:=firmware
   CATEGORY:=Firmware
   TITLE:=HiWiFi C526A ath10k board data
-  DEPENDS:=@TARGET_ipq40xx
+  DEPENDS:=@TARGET_ipq40xx +ath10k-board-qca4019
 endef
 
 define Package/ipq-wifi-hiwifi-c526a/description
   Board-specific ath10k board-2.bin for the HiWiFi C526A (IPQ4019).
 endef
 
+# Install under a private name and swap it in from postinst.  Writing
+# board-2.bin directly would clash with the file owned by
+# ath10k-board-qca4019 (apk/opkg refuse to overwrite it).
 define Package/ipq-wifi-hiwifi-c526a/install
 	$(INSTALL_DIR) $(1)/lib/firmware/ath10k/QCA4019/hw1.0
 	$(INSTALL_DATA) ./files/board-hiwifi_c526a.qca4019 \
-		$(1)/lib/firmware/ath10k/QCA4019/hw1.0/board-2.bin
+		$(1)/lib/firmware/ath10k/QCA4019/hw1.0/board-hiwifi_c526a.bin
+endef
+
+define Package/ipq-wifi-hiwifi-c526a/postinst
+#!/bin/sh
+[ -n "$$IPKG_INSTROOT" ] && root="$$IPKG_INSTROOT" || root=""
+src="$$root/lib/firmware/ath10k/QCA4019/hw1.0/board-hiwifi_c526a.bin"
+dst="$$root/lib/firmware/ath10k/QCA4019/hw1.0/board-2.bin"
+[ -f "$$src" ] && cp -f "$$src" "$$dst"
+exit 0
 endef
 
 $(eval $(call BuildPackage,ipq-wifi-hiwifi-c526a))
