@@ -159,8 +159,11 @@ already exists in every supported tree.
 3. **NAND layout.** `hiwifi_c526a` keeps the stock 44M `ubi` partition;
    `hiwifi_c526a-128m` uses the whole 128M. Do not mix them up.
 4. **Calibration.** The 24 KB `board-hiwifi_c526a.qca4019` blob is the only
-   non-upstream firmware; it is installed as
-   `/lib/firmware/ath10k/QCA4019/hw1.0/board-2.bin`.
+   non-upstream firmware. It is installed as
+   `/lib/firmware/ath10k/QCA4019/hw1.0/board-hiwifi_c526a.bin` and copied to
+   `board-2.bin` by `/lib/preinit/90_c526a_bdf` (after `mount_root`, before
+   `kmodloader` probes ath10k). The direct install would clash with the file
+   owned by `ath10k-board-qca4019`, which apk refuses to overwrite.
 5. **MAC addresses.** LAN MAC comes from the ASCII `Vfac_mac ` key in `bdinfo`
    (SPI-NOR); WAN is `+1`, radios are `+2` / `+3`.
 6. **`mt7615_reboot`** unloads `mt7615e` before reboot; keep it unless proven
