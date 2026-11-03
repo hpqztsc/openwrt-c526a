@@ -1,0 +1,69 @@
+#!/bin/sh
+#
+# Small adb helper for the router console.
+#
+cmd="$1"
+shift 2>/dev/null
+
+case "$cmd" in
+	devices)
+		exec adb devices -l
+		;;
+	connect)
+		exec adb connect "$@"
+		;;
+	disconnect)
+		exec adb disconnect "$@"
+		;;
+	shell)
+		exec adb shell "$@"
+		;;
+	root)
+		exec adb root
+		;;
+	sms)
+		adb shell su <<'EOF'
+content query --uri content://sms/inbox --projection _id,address,date,body --sort "date DESC"
+EOF
+		;;
+	shot)
+		out="${1:-/tmp/screen.png}"
+		adb exec-out screencap -p > "$out" && echo "$out"
+		;;
+	tap)
+		adb shell input tap "$1" "$2"
+		;;
+	swipe)
+		adb shell input swipe "$1" "$2" "$3" "$4"
+		;;
+	text)
+		adb shell input text "$1"
+		;;
+	key)
+		adb shell input keyevent "$1"
+		;;
+	ui)
+		adb exec-out uiautomator dump /dev/tty
+		;;
+	install)
+		adb install -r "$1"
+		;;
+	*)
+		cat <<EOF
+usage: adb-ctl <command>
+  devices                     list connected devices
+  connect <ip:port>           wireless adb (Android 11+ needs "adb pair" first)
+  disconnect [ip:port]
+  shell <cmd>                 run a shell command on the device
+  root                        restart adbd as root (userdebug/rooted)
+  sms                         dump the SMS inbox (root required)
+  shot [file]                 screenshot (default /tmp/screen.png)
+  tap <x> <y>
+  swipe <x1> <y1> <x2> <y2>
+  text <string>
+  key <keycode>
+  ui                          dump the current UI hierarchy
+  install <apk>
+EOF
+		;;
+esac

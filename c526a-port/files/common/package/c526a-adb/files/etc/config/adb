@@ -1,0 +1,21 @@
+config adb 'main'
+	option enabled '1'
+	# 1 = listen on 0.0.0.0:5037 (anyone on the LAN can control the phone)
+	# 0 = listen on 127.0.0.1 only (use adb-ctl locally or over ttyd/ssh)
+	option listen_lan '0'
+	# space separated host:port list, connected after the server starts
+	option connect ''
+
+config sms 'main'
+	option enabled '1'
+	option interval '30'
+	option max_store '50'
+	# ANDROID_SERIAL, needed when more than one device is connected
+	option serial ''
+	# POST the message as JSON to this URL (empty = disabled)
+	option webhook ''
+	# Telegram forwarding (empty = disabled)
+	option telegram_token ''
+	option telegram_chat ''
+	# protect /cgi-bin/adb-sms?token=... (empty = no token check)
+	option api_token ''

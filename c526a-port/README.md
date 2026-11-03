@@ -64,6 +64,12 @@ WireGuard, `ttyd` (web console).
 `htop`, `curl`, `wget-ssl`, `nano`, `bash`, `usbutils`, `pciutils`,
 `irqbalance`, `openssh-sftp-server`, Chinese LuCI translations.
 
+**ADB host + SMS bridge**
+`c526a-adb` (see below) and the vendored `adb` package from
+`nmeum/android-tools` 35.0.2. Current OpenWrt feeds do not ship `adb`, so
+`package/android-tools` (plus `package/brotli`, which it needs) is carried in
+this repo.
+
 If the image does not fit the stock 44 MB `ubi` partition, drop `ksmbd`,
 `wireguard` or `bash` first.
 
@@ -91,6 +97,56 @@ Images land in `bin/targets/ipq40xx/generic/`:
 
 The workflow builds all four sources in parallel and uploads one artifact per
 source.
+
+## ADB host / SMS bridge
+
+The router runs the ADB **host** (`adb`, not `adbd`) and can drive a phone
+connected to the USB port. `package/c526a-adb` adds:
+
+- `/etc/init.d/adb` — procd-managed `adb server`, bind address controlled by
+  `adb.main.listen_lan` (default `127.0.0.1:5037`)
+- `/etc/init.d/adbsms` + `/usr/bin/adb-sms` — polls new inbox rows from a
+  **rooted** phone (`adb shell su` + `content query`), keeps the last
+  `max_store` messages in `/tmp/adb-sms.json`, and can POST them to a webhook
+  or a Telegram bot
+- `/www/cgi-bin/adb-sms[?token=...]` — JSON endpoint
+- `/usr/bin/adb-ctl` — `devices / connect / shell / sms / shot / tap / swipe /
+  text / key / ui / install`
+
+Config (`/etc/config/adb`):
+
+```
+config adb 'main'
+	option enabled '1'
+	option listen_lan '0'
+	option connect ''          # e.g. '192.168.1.50:5555'
+
+config sms 'main'
+	option enabled '1'
+	option interval '30'
+	option max_store '50'
+	option serial ''           # ANDROID_SERIAL for multi-device setups
+	option webhook ''
+	option telegram_token ''
+	option telegram_chat ''
+	option api_token ''
+```
+
+First use:
+
+```sh
+adb-ctl devices          # phone must have USB debugging enabled
+adb-ctl sms              # requires root on the phone (Magisk su)
+adb-ctl shot /tmp/a.png
+adb-ctl tap 540 1200
+```
+
+`listen_lan=0` keeps port 5037 on localhost. Setting it to `1` exposes full
+control of the phone to the whole LAN — only do that behind a firewall or
+WireGuard. The CGI endpoint is unauthenticated unless `api_token` is set.
+
+`adb` and its dependencies (protobuf, abseil, brotli, ...) add roughly 7 MB to
+the image.
 
 ## Known limitations / verify on hardware
 

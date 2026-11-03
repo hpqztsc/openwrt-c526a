@@ -1,0 +1,100 @@
+#!/bin/sh
+#
+# Poll new SMS from a rooted Android device over ADB and forward them.
+# State (last seen _id) is kept in /etc/adb-sms.state, the inbox is written
+# to /tmp/adb-sms.json for /cgi-bin/adb-sms.
+#
+. /lib/functions.sh
+. /usr/share/libubox/jshn.sh
+
+STATE=/etc/adb-sms.state
+JSONL=/tmp/adb-sms.jsonl
+STORE=/tmp/adb-sms.json
+
+log() { logger -t adb-sms -- "$*"; }
+
+store_build() {
+	local max="$1"
+
+	{
+		printf '{"messages":['
+		[ -s "$JSONL" ] && tail -n "$max" "$JSONL" | paste -sd, -
+		printf ']}\n'
+	} > "$STORE.tmp" && mv "$STORE.tmp" "$STORE"
+}
+
+send() {
+	local json="$1" text="$2"
+
+	if [ -n "$webhook" ]; then
+		curl -sS -m 10 -H 'Content-Type: application/json' \
+			--data "$json" "$webhook" >/dev/null 2>&1
+	fi
+	if [ -n "$tg_token" ] && [ -n "$tg_chat" ]; then
+		curl -sS -m 10 "https://api.telegram.org/bot$tg_token/sendMessage" \
+			--data-urlencode "chat_id=$tg_chat" \
+			--data-urlencode "text=$text" >/dev/null 2>&1
+	fi
+}
+
+[ -f "$STATE" ] || echo 0 > "$STATE"
+[ -f "$JSONL" ] || : > "$JSONL"
+
+while :; do
+	config_load adb
+	config_get interval sms interval 30
+	config_get max_store sms max_store 50
+	config_get webhook sms webhook ""
+	config_get tg_token sms telegram_token ""
+	config_get tg_chat sms telegram_chat ""
+	config_get serial sms serial ""
+
+	[ -n "$serial" ] && export ANDROID_SERIAL="$serial"
+
+	last=$(cat "$STATE" 2>/dev/null)
+	case "$last" in ''|*[!0-9]*) last=0 ;; esac
+
+	if /usr/bin/adb get-state >/dev/null 2>&1; then
+		cat > /tmp/adb-sms.query <<EOF
+content query --uri content://sms/inbox --where "_id>$last" --projection _id,address,date,body --sort "date ASC"
+EOF
+		rows=$(/usr/bin/adb shell su < /tmp/adb-sms.query 2>/dev/null)
+		rm -f /tmp/adb-sms.query
+
+		printf '%s\n' "$rows" | awk -F', ' '
+			/^Row: / {
+				line=$0
+				sub(/^Row: [0-9]+ /, "", line)
+				n=split(line, a, ", ")
+				if (n < 4) next
+				id=a[1]; sub(/^_id=/, "", id)
+				addr=a[2]; sub(/^address=/, "", addr)
+				date=a[3]; sub(/^date=/, "", date)
+				body=a[4]; sub(/^body=/, "", body)
+				for (i=5; i<=n; i++) body=body ", " a[i]
+				gsub(/\r/, "", body)
+				printf "%s\t%s\t%s\t%s\n", id, addr, date, body
+			}' | while IFS="$(printf '\t')" read -r id addr date body; do
+			[ -n "$id" ] || continue
+
+			json_init
+			json_add_int id "$id"
+			json_add_string address "$addr"
+			json_add_int date "$date"
+			json_add_string body "$body"
+			msg=$(json_dump)
+
+			printf '%s\n' "$msg" >> "$JSONL"
+			echo "$id" > "$STATE"
+			send "$msg" "SMS $addr: $body"
+			log "new sms id=$id from $addr"
+		done
+
+		if [ "$(wc -l < "$JSONL")" -gt "$max_store" ]; then
+			tail -n "$max_store" "$JSONL" > "$JSONL.tmp" && mv "$JSONL.tmp" "$JSONL"
+		fi
+	fi
+
+	store_build "$max_store"
+	sleep "$interval"
+done

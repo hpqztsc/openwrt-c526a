@@ -1,0 +1,48 @@
+From: Marcello Barnaba <vjt@openssl.it>
+Date: Tue, 28 Apr 2026 00:00:00 +0200
+Subject: [PATCH] adb: claim by bInterfaceNumber, not array index
+
+USB devices are allowed to publish interfaces with non-contiguous
+bInterfaceNumber values. Quectel RM520N-GL in usbcfg 0x0801 exposes
+five interfaces numbered 0,1,2,3,5 (gap at 4) — the ADB endpoint sits
+on bInterfaceNumber 5.
+
+The libusb client iterates config->interface[] by array index and
+stores the loop counter in interface_num_. For our modem that ends up
+being 4 (the index of the ADB entry in the array), so
+libusb_claim_interface calls into USBDEVFS_CLAIMINTERFACE with
+ifnum=4 and the kernel returns ENOENT — interface 4 doesn't exist
+in the device's descriptors.
+
+Capture the descriptor's bInterfaceNumber at the point we accept the
+interface (where interface_desc is still in scope) and use that for
+the claim. The diagnostic logs keep printing the array index, since
+that's how callers identify the entry within config->interface[].
+
+--- a/vendor/adb/client/usb_libusb.cpp
++++ b/vendor/adb/client/usb_libusb.cpp
+@@ -388,6 +388,7 @@ struct LibusbConnection : public Connection {
+         uint16_t zero_mask = 0;
+         uint8_t bulk_in = 0, bulk_out = 0;
+         size_t packet_size = 0;
++        uint8_t adb_interface_number = 0;
+         bool found_adb = false;
+
+         for (interface_num = 0; interface_num < config->bNumInterfaces; ++interface_num) {
+@@ -454,6 +455,7 @@ struct LibusbConnection : public Connection {
+
+             if (found_in && found_out) {
+                 found_adb = true;
++                adb_interface_number = interface_desc.bInterfaceNumber;
+                 break;
+             } else {
+                 VLOG(USB) << "rejecting potential adb interface at " << device_address_
+@@ -465,7 +467,7 @@ struct LibusbConnection : public Connection {
+             return false;
+         }
+
+-        interface_num_ = interface_num;
++        interface_num_ = adb_interface_number;
+         write_endpoint_ = bulk_out;
+         read_endpoint_ = bulk_in;
+         zero_mask_ = zero_mask;

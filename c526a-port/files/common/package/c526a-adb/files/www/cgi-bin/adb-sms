@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# GET /cgi-bin/adb-sms[?token=...] -> the last N SMS as JSON
+#
+echo "Content-Type: application/json"
+echo
+
+token=$(uci -q get adb.sms.api_token)
+
+if [ -n "$token" ]; then
+	case "&${QUERY_STRING:-}&" in
+	*"&token=$token&"*)
+		;;
+	*)
+		echo '{"error":"unauthorized"}'
+		exit 0
+		;;
+	esac
+fi
+
+if [ -s /tmp/adb-sms.json ]; then
+	cat /tmp/adb-sms.json
+else
+	echo '{"messages":[]}'
+fi
