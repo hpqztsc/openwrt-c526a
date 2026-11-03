@@ -1,0 +1,11 @@
+#!/bin/sh
+#
+# Keep the ADB key and the SMS high-water mark across sysupgrade.
+#
+[ -f /etc/sysupgrade.conf ] || touch /etc/sysupgrade.conf
+
+for p in /root/.android /etc/adb-sms.state; do
+	grep -qx "$p" /etc/sysupgrade.conf 2>/dev/null || echo "$p" >> /etc/sysupgrade.conf
+done
+
+exit 0
