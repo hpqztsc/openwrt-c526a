@@ -12,6 +12,10 @@ PKG_RELEASE:=1
 
 include $(INCLUDE_DIR)/package.mk
 
+# no upstream sources, only the board file in files/
+define Build/Compile
+endef
+
 define Package/ipq-wifi-hiwifi-c526a
   SECTION:=firmware
   CATEGORY:=Firmware
