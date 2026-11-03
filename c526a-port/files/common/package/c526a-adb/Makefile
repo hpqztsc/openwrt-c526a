@@ -10,6 +10,10 @@ PKG_RELEASE:=1
 
 include $(INCLUDE_DIR)/package.mk
 
+# no upstream sources, only the files/ overlay
+define Build/Compile
+endef
+
 define Package/c526a-adb
   SECTION:=utils
   CATEGORY:=Utilities
