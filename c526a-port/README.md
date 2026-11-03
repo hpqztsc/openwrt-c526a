@@ -58,11 +58,17 @@ USB storage + `ext4/vfat/exfat/ntfs3` + `block-mount`, `ksmbd-server` +
 **Network services**
 `dnsmasq-full`, `kmod-nft-offload` (software flow offload), `sqm-scripts`,
 `ddns-scripts`, `miniupnpd-nftables`, `nlbwmon`, `etherwake` (WoL),
-WireGuard, `ttyd` (web console).
+WireGuard, `ttyd` (web console), `adblock-fast`.
 
-**Tools**
+**Extra LuCI apps**
+`luci-app-commands`, `luci-app-wifischedule`, `luci-app-hd-idle`,
+`luci-app-adblock-fast`, plus Chinese translations for the ones that have
+them.
+
+**Tools / diagnostics**
 `htop`, `curl`, `wget-ssl`, `nano`, `bash`, `usbutils`, `pciutils`,
-`irqbalance`, `openssh-sftp-server`, Chinese LuCI translations.
+`irqbalance`, `openssh-sftp-server`, `socat`, `tcpdump`, `ethtool`, and the
+common USB-serial chips (`ch341`, `cp210x`, `ftdi`, `pl2303`).
 
 **ADB host + SMS bridge**
 `c526a-adb` (see below) on top of the in-tree `adb` package
@@ -106,13 +112,15 @@ connected to the USB port. `package/c526a-adb` adds:
 
 - `/etc/init.d/adb` — procd-managed `adb server`, bind address controlled by
   `adb.main.listen_lan` (default `127.0.0.1:5037`)
+- `/etc/init.d/adbnet` + `/usr/bin/adb-net` — keeps the network devices listed
+  in `adb.main.connect` connected (reconnects after Wi-Fi drops / reboots)
 - `/etc/init.d/adbsms` + `/usr/bin/adb-sms` — polls new inbox rows from a
   **rooted** phone (`adb shell su` + `content query`), keeps the last
   `max_store` messages in `/tmp/adb-sms.json`, and can POST them to a webhook
   or a Telegram bot
 - `/www/cgi-bin/adb-sms[?token=...]` — JSON endpoint
-- `/usr/bin/adb-ctl` — `devices / connect / shell / sms / shot / tap / swipe /
-  text / key / ui / install`
+- `/usr/bin/adb-ctl` — `devices / connect / tcpip / enable-tcp / shell / sms /
+  shot / tap / swipe / text / key / ui / install`
 
 Config (`/etc/config/adb`):
 
@@ -120,23 +128,41 @@ Config (`/etc/config/adb`):
 config adb 'main'
 	option enabled '1'
 	option listen_lan '0'
-	option connect ''          # e.g. '192.168.1.50:5555'
+	option connect ''              # e.g. '192.168.1.50:5555'
+	option reconnect '1'
+	option reconnect_interval '30'
 
 config sms 'main'
 	option enabled '1'
 	option interval '30'
 	option max_store '50'
-	option serial ''           # ANDROID_SERIAL for multi-device setups
+	option serial ''               # ANDROID_SERIAL for multi-device setups
 	option webhook ''
 	option telegram_token ''
 	option telegram_chat ''
 	option api_token ''
 ```
 
+### Network ADB
+
+USB is not required. Three ways to get a phone reachable over TCP:
+
+1. **USB once** (works on every Android): connect the phone, authorise it, then
+   `adb-ctl tcpip 5555`. Unplug and `adb-ctl connect 192.168.1.50:5555`.
+2. **Rooted phone, no USB needed**: `adb-ctl enable-tcp 5555` sets
+   `persist.adb.tcp.port`, so adbd listens on 5555 after every boot. Then
+   `adb-ctl connect <ip>:5555`.
+3. **Auto-connect**: put `192.168.1.50:5555` into `adb.main.connect`; the
+   `adbnet` service reconnects every `reconnect_interval` seconds.
+
+Android 11+ "Wireless debugging" needs `adb pair`, which adb 1.0.32 does not
+implement — use option 1 or 2 above. Multiple phones are fine; set
+`adb.sms.serial` to the one used for SMS.
+
 First use:
 
 ```sh
-adb-ctl devices          # phone must have USB debugging enabled
+adb-ctl devices          # USB or network, whichever is connected
 adb-ctl sms              # requires root on the phone (Magisk su)
 adb-ctl shot /tmp/a.png
 adb-ctl tap 540 1200
@@ -159,11 +185,8 @@ already exists in every supported tree.
 3. **NAND layout.** `hiwifi_c526a` keeps the stock 44M `ubi` partition;
    `hiwifi_c526a-128m` uses the whole 128M. Do not mix them up.
 4. **Calibration.** The 24 KB `board-hiwifi_c526a.qca4019` blob is the only
-   non-upstream firmware. It is installed as
-   `/lib/firmware/ath10k/QCA4019/hw1.0/board-hiwifi_c526a.bin` and copied to
-   `board-2.bin` by `/lib/preinit/90_c526a_bdf` (after `mount_root`, before
-   `kmodloader` probes ath10k). The direct install would clash with the file
-   owned by `ath10k-board-qca4019`, which apk refuses to overwrite.
+   non-upstream firmware; it is installed as
+   `/lib/firmware/ath10k/QCA4019/hw1.0/board-2.bin`.
 5. **MAC addresses.** LAN MAC comes from the ASCII `Vfac_mac ` key in `bdinfo`
    (SPI-NOR); WAN is `+1`, radios are `+2` / `+3`.
 6. **`mt7615_reboot`** unloads `mt7615e` before reboot; keep it unless proven

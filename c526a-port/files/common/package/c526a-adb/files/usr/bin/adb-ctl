@@ -9,11 +9,29 @@ case "$cmd" in
 	devices)
 		exec adb devices -l
 		;;
-	connect)
+	connect|net)
 		exec adb connect "$@"
 		;;
 	disconnect)
 		exec adb disconnect "$@"
+		;;
+	tcpip)
+		exec adb tcpip "${1:-5555}"
+		;;
+	pair)
+		echo "adb 1.0.32 has no 'adb pair' (Android 11+ wireless debugging)."
+		echo "USB once:  adb-ctl tcpip 5555   then  adb-ctl connect <phone-ip>:5555"
+		echo "rooted:    adb-ctl enable-tcp [port]"
+		;;
+	enable-tcp)
+		port="${1:-5555}"
+		adb shell su <<EOF
+setprop service.adb.tcp.port $port
+setprop persist.adb.tcp.port $port
+stop adbd
+start adbd
+EOF
+		echo "adbd now listens on $port (persist.adb.tcp.port is set)"
 		;;
 	shell)
 		exec adb shell "$@"
@@ -63,8 +81,11 @@ EOF
 		cat <<EOF
 usage: adb-ctl <command>
   devices                     list connected devices
-  connect <ip:port>           wireless adb (Android 11+ needs "adb pair" first)
+  connect <ip:port>           network adb (alias: net)
   disconnect [ip:port]
+  tcpip [port]                put a USB-connected phone into TCP mode (default 5555)
+  enable-tcp [port]           same, for a rooted phone without USB (persists)
+  pair                        explain the Android 11+ pairing limitation
   shell <cmd>                 run a shell command on the device
   root                        restart adbd as root (userdebug/rooted)
   sms                         dump the SMS inbox (root required)

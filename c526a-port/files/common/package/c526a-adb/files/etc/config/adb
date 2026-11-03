@@ -3,8 +3,12 @@ config adb 'main'
 	# 1 = listen on 0.0.0.0:5037 (anyone on the LAN can control the phone)
 	# 0 = listen on 127.0.0.1 only (use adb-ctl locally or over ttyd/ssh)
 	option listen_lan '0'
-	# space separated host:port list, connected after the server starts
+	# space separated host:port list for network ADB, e.g.
+	# '192.168.1.50:5555 192.168.1.51:5555'
 	option connect ''
+	# keep reconnecting the entries above (Wi-Fi drops, phone reboots)
+	option reconnect '1'
+	option reconnect_interval '30'
 
 config sms 'main'
 	option enabled '1'

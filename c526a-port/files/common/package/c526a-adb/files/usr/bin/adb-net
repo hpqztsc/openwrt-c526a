@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# Keep the configured network ADB devices connected.
+#
+. /lib/functions.sh
+
+while :; do
+	config_load adb
+	config_get connect main connect ""
+	config_get_bool reconnect main reconnect 1
+	config_get interval main reconnect_interval 30
+
+	if [ "$reconnect" = 1 ]; then
+		for h in $connect; do
+			/usr/bin/adb devices 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$h" ||
+				/usr/bin/adb connect "$h" >/dev/null 2>&1
+		done
+	fi
+
+	sleep "$interval"
+done

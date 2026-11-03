@@ -36,8 +36,10 @@ define Package/c526a-adb/install
 	$(INSTALL_CONF) ./files/etc/config/adb $(1)/etc/config/adb
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/adb $(1)/etc/init.d/adb
+	$(INSTALL_BIN) ./files/etc/init.d/adbnet $(1)/etc/init.d/adbnet
 	$(INSTALL_BIN) ./files/etc/init.d/adbsms $(1)/etc/init.d/adbsms
 	$(INSTALL_DIR) $(1)/usr/bin
+	$(INSTALL_BIN) ./files/usr/bin/adb-net $(1)/usr/bin/adb-net
 	$(INSTALL_BIN) ./files/usr/bin/adb-sms $(1)/usr/bin/adb-sms
 	$(INSTALL_BIN) ./files/usr/bin/adb-ctl $(1)/usr/bin/adb-ctl
 	$(INSTALL_DIR) $(1)/www/cgi-bin
