@@ -175,6 +175,70 @@ WireGuard. The CGI endpoint is unauthenticated unless `api_token` is set.
 Image impact is small (a few hundred KB): this uses the `adb` package that
 already exists in every supported tree.
 
+## 多 WAN（四路上行）
+
+`c526a-wan` 用 mwan3 管理四路上行，提供一个声明式配置和 `wanctl` 命令：
+
+| uplink | 物理链路 | 说明 |
+|---|---|---|
+| `wan` | WAN 口 | DHCP / PPPoE / 静态，原有配置不动 |
+| `wan2` | 指定网关 | `mode=lan`：在 `br-lan` 上建 macvlan + 静态网关；`mode=port`：把 `lan3` 从网桥里拿出来当第二个 WAN |
+| `wwan` | WiFi STA | travelmate 连接已有 WiFi，逻辑接口名 `wwan` |
+| `usbwan` | USB | RNDIS/ECM/NCM 用 `proto dhcp`；4G 模块用 `qmi`/`mbim` |
+
+```sh
+wanctl status
+
+# 指定网关（LAN 段上的上游路由器）
+wanctl set wan2 enabled 1
+wanctl set wan2 mode lan
+wanctl set wan2 ipaddr 192.168.1.2
+wanctl set wan2 gateway 192.168.1.1
+
+# 或者牺牲 lan3 作为第二个 WAN
+wanctl set wan2 mode port
+wanctl set wan2 proto dhcp
+
+# WiFi STA（先用 travelmate 连上）
+wanctl set wwan enabled 1
+
+# USB
+wanctl usb-detect
+wanctl set usbwan enabled 1
+wanctl set usbwan proto dhcp
+wanctl set usbwan device usb0
+# 4G 模块：wanctl set usbwan proto qmi / apn cmnet
+
+# 策略
+wanctl default failover      # 按 order 顺序故障切换
+wanctl default balanced      # 按 weight 加权负载均衡
+wanctl set wan2 weight 2
+
+# 分流：指定目标走某一路
+wanctl route add office via=wan2 dest_ip=192.168.1.0/24
+wanctl route add nas via=wan  dest_ip=192.168.1.0/24
+wanctl route list
+```
+
+`wanctl apply` 会写入 `/etc/config/network`、把接口加进 `wan` 防火墙区域、
+并整体生成 `/etc/config/mwan3`（globals/interface/member/policy/rule），
+然后 reload network、restart mwan3。想先看会改什么可以用：
+
+```sh
+wanctl --dry-run apply
+```
+
+注意：
+
+- `wanctl` 是 mwan3 配置的唯一来源，手改 LuCI 的 mwan3 页面会在下次
+  `apply` 时被覆盖；策略请用 `wanctl route/default` 或直接改 `wanctl` 配置。
+- `mode=port` 会占用一个 LAN 口（默认 `lan3`），关闭 wan2 时会自动还回网桥。
+- `mode=lan` 依赖 `kmod-macvlan`，上游交换机如果做了端口隔离可能不生效。
+- mwan3 是**按连接**均衡，不是按包；单条大流量连接不会叠加带宽。
+- 多路上行同时 `peerdns` 会让 `resolv.conf.auto` 抖动，`wwan`/`usbwan`
+  建议固定 DNS 或 `peerdns 0`。
+- 默认规则是 `failover`，`order` 决定优先级；`balanced` 用 `weight` 加权。
+
 ## Known limitations / verify on hardware
 
 1. **DSA port order.** swconfig ports 2/3/4 were LAN, 5 was WAN; the DTS maps
@@ -185,8 +249,11 @@ already exists in every supported tree.
 3. **NAND layout.** `hiwifi_c526a` keeps the stock 44M `ubi` partition;
    `hiwifi_c526a-128m` uses the whole 128M. Do not mix them up.
 4. **Calibration.** The 24 KB `board-hiwifi_c526a.qca4019` blob is the only
-   non-upstream firmware; it is installed as
-   `/lib/firmware/ath10k/QCA4019/hw1.0/board-2.bin`.
+   non-upstream firmware. It is installed as
+   `/lib/firmware/ath10k/QCA4019/hw1.0/board-hiwifi_c526a.bin` and copied to
+   `board-2.bin` by `/lib/preinit/90_c526a_bdf` (after `mount_root`, before
+   `kmodloader` probes ath10k). A direct install would clash with the file
+   owned by `ath10k-board-qca4019`, which apk refuses to overwrite.
 5. **MAC addresses.** LAN MAC comes from the ASCII `Vfac_mac ` key in `bdinfo`
    (SPI-NOR); WAN is `+1`, radios are `+2` / `+3`.
 6. **`mt7615_reboot`** unloads `mt7615e` before reboot; keep it unless proven

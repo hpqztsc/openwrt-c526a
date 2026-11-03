@@ -1,0 +1,431 @@
+#!/bin/sh
+#
+# wanctl - configure the four C526A uplinks and mwan3 policies.
+#
+#   wan      Ethernet WAN port (DHCP / PPPoE / static)
+#   wan2     "specified gateway": macvlan on the LAN bridge (mode=lan) or a
+#            dedicated LAN port (mode=port), static or DHCP
+#   wwan     WiFi STA, normally managed by travelmate
+#   usbwan   USB tethering / QMI / MBIM / NCM
+#
+# Uplinks are described in /etc/config/wanctl; "wanctl apply" materialises
+# them into /etc/config/network, /etc/config/firewall and /etc/config/mwan3.
+#
+[ -f /lib/functions.sh ] && . /lib/functions.sh
+
+WANCTL=wanctl
+MW=mwan3
+DRY=0
+
+log() { logger -t wanctl -- "$*"; }
+
+u_set() {
+	[ "$DRY" = 1 ] && { echo "uci set $1=$2"; return 0; }
+	uci set "$1=$2"
+}
+u_del() {
+	[ "$DRY" = 1 ] && { echo "uci delete $1"; return 0; }
+	uci -q delete "$1"
+}
+u_add_list() {
+	[ "$DRY" = 1 ] && { echo "uci add_list $1=$2"; return 0; }
+	uci add_list "$1=$2"
+}
+u_del_list() {
+	[ "$DRY" = 1 ] && { echo "uci del_list $1=$2"; return 0; }
+	uci -q del_list "$1=$2"
+}
+u_commit() {
+	[ "$DRY" = 1 ] && { echo "uci commit $1"; return 0; }
+	uci commit "$1"
+}
+cget() { uci -q get "$WANCTL.$1"; }
+
+uplinks() {
+	uci -q show "$WANCTL" 2>/dev/null | sed -n "s/^$WANCTL\.\([^.=]*\)=uplink$/\1/p"
+}
+
+ordered_uplinks() {
+	local order name
+	order=$(cget globals.order)
+	for name in $order; do
+		[ -n "$(cget "$name")" ] || continue
+		printf '%s\n' "$name"
+	done
+	for name in $(uplinks); do
+		case " $order " in
+		*" $name "*) ;;
+		*) printf '%s\n' "$name" ;;
+		esac
+	done
+}
+
+zone_wan() {
+	local s
+	for s in $(uci -q show firewall 2>/dev/null | sed -n 's/^firewall\.\([^.=]*\)=zone$/\1/p'); do
+		[ "$(uci -q get "firewall.$s.name")" = wan ] && { echo "$s"; return 0; }
+	done
+	return 1
+}
+
+brlan_section() {
+	local s
+	for s in $(uci -q show network 2>/dev/null | sed -n 's/^network\.\([^.=]*\)=device$/\1/p'); do
+		[ "$(uci -q get "network.$s.name")" = br-lan ] && { echo "$s"; return 0; }
+	done
+	return 1
+}
+
+ensure_wan2() {
+	local mode port proto ipaddr netmask gateway br mac
+
+	mode=$(cget wan2.mode)
+	port=$(cget wan2.port)
+	[ -n "$port" ] || port=lan3
+	proto=$(cget wan2.proto)
+	[ -n "$proto" ] || proto=static
+	ipaddr=$(cget wan2.ipaddr)
+	netmask=$(cget wan2.netmask)
+	gateway=$(cget wan2.gateway)
+
+	if [ "$mode" = "port" ]; then
+		br=$(brlan_section)
+		[ -n "$br" ] && u_del_list "network.$br.ports" "$port"
+		u_set network.wan2 interface
+		u_set network.wan2.proto "$proto"
+		u_set network.wan2.device "$port"
+	else
+		u_set network.wan2dev device
+		u_set network.wan2dev.name wan2dev
+		u_set network.wan2dev.type macvlan
+		u_set network.wan2dev.ifname br-lan
+		mac=$(cget wan2.macaddr)
+		[ -n "$mac" ] || mac=02:11:22:33:44:55
+		u_set network.wan2dev.macaddr "$mac"
+		u_set network.wan2 interface
+		u_set network.wan2.proto "$proto"
+		u_set network.wan2.device wan2dev
+	fi
+
+	if [ "$proto" = "static" ]; then
+		[ -n "$ipaddr" ] && u_set network.wan2.ipaddr "$ipaddr"
+		[ -n "$netmask" ] && u_set network.wan2.netmask "$netmask"
+		[ -n "$gateway" ] && u_set network.wan2.gateway "$gateway"
+	fi
+}
+
+ensure_wwan() {
+	if ! uci -q get network.wwan >/dev/null 2>&1; then
+		u_set network.wwan interface
+		u_set network.wwan.proto dhcp
+		u_set network.wwan.peerdns 0
+	fi
+}
+
+ensure_usbwan() {
+	local proto dev
+
+	proto=$(cget usbwan.proto)
+	[ -n "$proto" ] || proto=dhcp
+	dev=$(cget usbwan.device)
+
+	u_set network.usbwan interface
+	u_set network.usbwan.proto "$proto"
+
+	case "$proto" in
+	dhcp)
+		[ -n "$dev" ] || dev=$(usb_detect | awk 'NR==1 {print $1}')
+		[ -n "$dev" ] && u_set network.usbwan.device "$dev"
+		;;
+	qmi|mbim)
+		u_set network.usbwan.device "${dev:-/dev/cdc-wdm0}"
+		u_set network.usbwan.apn "$(cget usbwan.apn)"
+		[ -n "$(cget usbwan.username)" ] && {
+			u_set network.usbwan.username "$(cget usbwan.username)"
+			u_set network.usbwan.password "$(cget usbwan.password)"
+		}
+		u_set network.usbwan.pdptype "$(cget usbwan.pdptype)"
+		;;
+	esac
+}
+
+ensure_firewall() {
+	local zone name iface
+
+	zone=$(zone_wan) || return 0
+	for name in $(ordered_uplinks); do
+		[ "$(cget "$name.enabled")" = 1 ] || continue
+		iface=$(cget "$name.interface")
+		[ -n "$iface" ] || iface=$name
+		u_del_list "firewall.$zone.network" "$iface"
+		u_add_list "firewall.$zone.network" "$iface"
+	done
+}
+
+mwan3_conf() {
+	local name iface idx=0 ips ip reliability default_policy via r k v enabled
+
+	echo "config globals 'globals'"
+	echo "	option mmx_mask '0x3F00'"
+	echo
+
+	for name in $(ordered_uplinks); do
+		[ "$(cget "$name.enabled")" = 1 ] || continue
+		idx=$((idx + 1))
+		iface=$(cget "$name.interface")
+		[ -n "$iface" ] || iface=$name
+		ips=$(cget "$name.track_ip")
+		[ -n "$ips" ] || ips=$(cget globals.track_ip)
+		[ -n "$ips" ] || ips="223.5.5.5 119.29.29.29"
+		ip=0
+		for i in $ips; do ip=$((ip + 1)); done
+		reliability=$ip
+		[ "$reliability" -ge 1 ] || reliability=1
+
+		echo "config interface 'wanctl_$name'"
+		echo "	option enabled '1'"
+		echo "	option family 'ipv4'"
+		echo "	option reliability '$reliability'"
+		echo "	option count '1'"
+		echo "	option timeout '2'"
+		echo "	option interval '5'"
+		echo "	option down '3'"
+		echo "	option up '3'"
+		for i in $ips; do
+			echo "	list track_ip '$i'"
+		done
+		echo
+
+		echo "config member 'wanctl_${name}_b'"
+		echo "	option interface '$iface'"
+		echo "	option metric '1'"
+		echo "	option weight '$(cget "$name.weight")'"
+		echo
+		echo "config member 'wanctl_${name}_f'"
+		echo "	option interface '$iface'"
+		echo "	option metric '$idx'"
+		echo "	option weight '1'"
+		echo
+		echo "config member 'wanctl_${name}_o'"
+		echo "	option interface '$iface'"
+		echo "	option metric '1'"
+		echo "	option weight '1'"
+		echo
+	done
+
+	echo "config policy 'wanctl_balanced'"
+	for name in $(ordered_uplinks); do
+		[ "$(cget "$name.enabled")" = 1 ] || continue
+		echo "	list use_member 'wanctl_${name}_b'"
+	done
+	echo
+	echo "config policy 'wanctl_failover'"
+	for name in $(ordered_uplinks); do
+		[ "$(cget "$name.enabled")" = 1 ] || continue
+		echo "	list use_member 'wanctl_${name}_f'"
+	done
+	echo
+	for name in $(ordered_uplinks); do
+		[ "$(cget "$name.enabled")" = 1 ] || continue
+		echo "config policy 'wanctl_only_$name'"
+		echo "	list use_member 'wanctl_${name}_o'"
+		echo
+	done
+
+	default_policy=$(cget globals.default_policy)
+	[ -n "$default_policy" ] || default_policy=failover
+	echo "config rule 'wanctl_default'"
+	echo "	option dest_ip '0.0.0.0/0'"
+	echo "	option family 'ipv4'"
+	echo "	option proto 'all'"
+	echo "	option use_policy 'wanctl_$default_policy'"
+	echo
+
+	for r in $(uci -q show "$WANCTL" 2>/dev/null | sed -n "s/^$WANCTL\.\([^.=]*\)=route$/\1/p"); do
+		via=$(cget "$r.via")
+		[ -n "$via" ] || continue
+		enabled=$(cget "$via.enabled")
+		[ "$enabled" = 1 ] || continue
+		echo "config rule 'wanctl_route_$r'"
+		for k in src_ip dest_ip src_port dest_port proto family; do
+			v=$(cget "$r.$k")
+			[ -n "$v" ] && echo "	option $k '$v'"
+		done
+		echo "	option use_policy 'wanctl_only_$via'"
+		echo "	option sticky '1'"
+		[ "$(cget "$r.logging")" = 1 ] && echo "	option logging '1'"
+		echo
+	done
+}
+
+build_mwan3() {
+	if [ "$DRY" = 1 ]; then
+		echo "# ---- /etc/config/mwan3 ----"
+		mwan3_conf
+		return 0
+	fi
+	mwan3_conf > /etc/config/mwan3.new && mv /etc/config/mwan3.new /etc/config/mwan3
+}
+
+apply() {
+	[ "$DRY" = 1 ] || [ -f /etc/config/$WANCTL ] || {
+		echo "wanctl: /etc/config/$WANCTL missing" >&2
+		return 1
+	}
+
+	uci -q get "$WANCTL.globals" >/dev/null 2>&1 || {
+		echo "wanctl: wanctl.globals missing" >&2
+		return 1
+	}
+
+	if [ "$(cget wan2.enabled)" = 1 ]; then
+		ensure_wan2
+	elif [ "$(cget wan2.mode)" = "port" ]; then
+		br=$(brlan_section)
+		if [ -n "$br" ]; then
+			u_del_list "network.$br.ports" "$(cget wan2.port)"
+			u_add_list "network.$br.ports" "$(cget wan2.port)"
+		fi
+		u_del network.wan2
+	fi
+	[ "$(cget wwan.enabled)" = 1 ] && ensure_wwan
+	[ "$(cget usbwan.enabled)" = 1 ] && ensure_usbwan
+
+	ensure_firewall
+	build_mwan3
+
+	u_commit network
+	u_commit firewall
+	u_commit "$WANCTL"
+
+	[ "$DRY" = 1 ] && return 0
+
+	ubus call network reload >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1
+	sleep 1
+	[ -x /etc/init.d/mwan3 ] && /etc/init.d/mwan3 restart >/dev/null 2>&1
+	[ -x /etc/init.d/firewall ] && /etc/init.d/firewall reload >/dev/null 2>&1
+	log "applied"
+}
+
+status() {
+	local name iface up addr gw
+
+	for name in $(uplinks); do
+		iface=$(cget "$name.interface")
+		[ -n "$iface" ] || iface=$name
+		up=$(ubus call network.interface."$iface" status 2>/dev/null | jsonfilter -e '@.up' 2>/dev/null)
+		addr=$(ubus call network.interface."$iface" status 2>/dev/null | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null)
+		gw=$(ubus call network.interface."$iface" status 2>/dev/null | jsonfilter -e '@.route[0].nexthop' 2>/dev/null)
+		printf '%-8s %-8s up=%-5s addr=%-15s gw=%s\n' \
+			"$name" "$iface" "${up:-?}" "${addr:--}" "${gw:--}"
+	done
+	echo
+	mwan3 status 2>/dev/null | sed -n '1,40p'
+}
+
+usb_detect() {
+	local d n drv
+	for d in /sys/class/net/*; do
+		n=${d##*/}
+		[ -e "$d/device" ] || continue
+		drv=$(basename "$(readlink -f "$d/device/driver" 2>/dev/null)" 2>/dev/null)
+		case "$drv" in
+		rndis_host|cdc_ether|cdc_ncm|qmi_wwan|cdc_mbim|ipheth)
+			echo "$n $drv"
+			;;
+		esac
+	done
+}
+
+usage() {
+	cat <<EOF
+usage: wanctl <command>
+
+  apply                     write network/firewall/mwan3 config and reload
+  status                    show uplink and mwan3 status
+  uplink list|enable|disable <name>
+  set <section> <option> <value>
+  default failover|balanced
+  route add <name> via=<uplink> [src_ip=..] [dest_ip=..] [src_port=..] [dest_port=..] [proto=..]
+  route del <name>
+  route list
+  usb-detect                print USB network interfaces seen by the kernel
+
+Examples:
+  wanctl set wan2 enabled 1
+  wanctl set wan2 mode lan
+  wanctl set wan2 gateway 192.168.1.1
+  wanctl set usbwan proto qmi
+  wanctl default balanced
+  wanctl route add nas via=wan2 dest_ip=192.168.1.0/24
+EOF
+}
+
+[ "$1" = "--dry-run" ] && { DRY=1; shift; }
+
+cmd=$1
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+apply|"")
+	apply
+	;;
+status)
+	status
+	;;
+uplink)
+	act=$1; name=$2
+	case "$act" in
+	list) uplinks ;;
+	enable|disable)
+		[ -n "$name" ] || { usage; exit 1; }
+		uci set "$WANCTL.$name.enabled=$([ "$act" = enable ] && echo 1 || echo 0)"
+		uci commit "$WANCTL"
+		apply
+		;;
+	*) usage; exit 1 ;;
+	esac
+	;;
+set)
+	sec=$1; opt=$2; shift 2
+	[ -n "$sec" ] && [ -n "$opt" ] || { usage; exit 1; }
+	uci set "$WANCTL.$sec.$opt=$*"
+	uci commit "$WANCTL"
+	apply
+	;;
+default)
+	uci set "$WANCTL.globals.default_policy=$1"
+	uci commit "$WANCTL"
+	apply
+	;;
+route)
+	act=$1; name=$2; shift 2
+	case "$act" in
+	add)
+		[ -n "$name" ] || { usage; exit 1; }
+		uci set "$WANCTL.$name=route"
+		for kv in "$@"; do
+			uci set "$WANCTL.$name.${kv%%=*}=${kv#*=}"
+		done
+		uci commit "$WANCTL"
+		apply
+		;;
+	del)
+		uci -q delete "$WANCTL.$name"
+		uci commit "$WANCTL"
+		apply
+		;;
+	list)
+		uci -q show "$WANCTL" | grep '=route' || true
+		;;
+	*) usage; exit 1 ;;
+	esac
+	;;
+usb-detect)
+	usb_detect
+	;;
+*)
+	usage
+	exit 1
+	;;
+esac

@@ -1,0 +1,41 @@
+config globals 'globals'
+	option enabled '1'
+	option default_policy 'failover'
+	option order 'wan wan2 wwan usbwan'
+	option track_ip '223.5.5.5 119.29.29.29'
+
+config uplink 'wan'
+	option enabled '1'
+	option interface 'wan'
+	option weight '1'
+
+config uplink 'wan2'
+	option enabled '0'
+	option interface 'wan2'
+	# lan  = macvlan on br-lan, use the upstream gateway on the LAN segment
+	# port = take a LAN port out of br-lan and use it as a second WAN
+	option mode 'lan'
+	option port 'lan3'
+	option proto 'static'
+	option ipaddr '192.168.1.2'
+	option netmask '255.255.255.0'
+	option gateway '192.168.1.1'
+	option macaddr '02:11:22:33:44:55'
+	option weight '1'
+
+config uplink 'wwan'
+	option enabled '0'
+	option interface 'wwan'
+	option weight '1'
+
+config uplink 'usbwan'
+	option enabled '0'
+	option interface 'usbwan'
+	# dhcp (RNDIS/ECM/NCM) | qmi | mbim
+	option proto 'dhcp'
+	option device ''
+	option apn ''
+	option username ''
+	option password ''
+	option pdptype 'ipv4'
+	option weight '1'

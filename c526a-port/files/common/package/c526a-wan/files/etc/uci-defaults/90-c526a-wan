@@ -1,0 +1,7 @@
+#!/bin/sh
+#
+# Enable the multi-uplink service on first boot.
+#
+[ -x /etc/init.d/wanctl ] && /etc/init.d/wanctl enable
+
+exit 0
