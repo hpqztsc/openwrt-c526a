@@ -182,22 +182,64 @@ already exists in every supported tree.
 | uplink | 物理链路 | 说明 |
 |---|---|---|
 | `wan` | WAN 口 | DHCP / PPPoE / 静态，原有配置不动 |
-| `wan2` | 指定网关 | `mode=lan`：在 `br-lan` 上建 macvlan + 静态网关；`mode=port`：把 `lan3` 从网桥里拿出来当第二个 WAN |
+| `wan2` | 指定网关 | **默认 `mode=port`：把 `lan3` 从网桥拿出来当第二个 WAN**；也支持 `mode=lan`（macvlan） |
 | `wwan` | WiFi STA | travelmate 连接已有 WiFi，逻辑接口名 `wwan` |
 | `usbwan` | USB | RNDIS/ECM/NCM 用 `proto dhcp`；4G 模块用 `qmi`/`mbim` |
 
-```sh
-wanctl status
+### `mode=port` 已预配置好（牺牲 lan3）
 
-# 指定网关（LAN 段上的上游路由器）
-wanctl set wan2 enabled 1
-wanctl set wan2 mode lan
+出厂配置里 `wan2` 已经是：
+
+```
+option enabled '1'
+option mode 'port'
+option port 'lan3'
+option proto 'dhcp'
+```
+
+刷机后 `wanctl` 会自动把 `lan3` 从 `br-lan` 摘出来，创建 `wan2`，加进
+`wan` 防火墙区域和 mwan3。你只需要把网线插到 **LAN3 口**。
+
+刷完先确认：
+
+```sh
+wanctl check                 # 检查配置/端口/地址
+wanctl status                # 四路上行 + mwan3 状态
+ip -br link show lan3        # 应显示 UP / LOWER_UP（插了网线）
+ubus call network.interface.wan2 status
+```
+
+如果上游是静态地址：
+
+```sh
+wanctl wan2 port lan3 static 192.168.2.2 255.255.255.0 192.168.2.1
+```
+
+如果上游是 PPPoE：
+
+```sh
+wanctl set wan2 proto pppoe
+wanctl set wan2 username 你的账号
+wanctl set wan2 password 你的密码
+```
+
+回滚（把 lan3 还回 LAN 网桥）：
+
+```sh
+wanctl wan2 off
+```
+
+物理端口对应关系：DTS 里 `swport4 → lan3`，但 DSA 端口顺序还没有在真机上
+确认过。如果插 LAN3 口 `ethtool lan3` 显示 no link、而别的口有 link，说明
+顺序反了，把 `wan2.port` 改成实际有链路的那个口即可（`lan1`/`lan2`/`lan3`）。
+
+### 其它上行和策略
+
+```sh
+# 指定网关（不想牺牲 LAN 口时用 macvlan）
+wanctl wan2 lan
 wanctl set wan2 ipaddr 192.168.1.2
 wanctl set wan2 gateway 192.168.1.1
-
-# 或者牺牲 lan3 作为第二个 WAN
-wanctl set wan2 mode port
-wanctl set wan2 proto dhcp
 
 # WiFi STA（先用 travelmate 连上）
 wanctl set wwan enabled 1
@@ -210,13 +252,13 @@ wanctl set usbwan device usb0
 # 4G 模块：wanctl set usbwan proto qmi / apn cmnet
 
 # 策略
-wanctl default failover      # 按 order 顺序故障切换
+wanctl default failover      # 按 order 顺序故障切换（默认）
 wanctl default balanced      # 按 weight 加权负载均衡
 wanctl set wan2 weight 2
 
 # 分流：指定目标走某一路
 wanctl route add office via=wan2 dest_ip=192.168.1.0/24
-wanctl route add nas via=wan  dest_ip=192.168.1.0/24
+wanctl route add nas via=wan dest_ip=10.0.0.0/8
 wanctl route list
 ```
 
@@ -233,6 +275,8 @@ wanctl --dry-run apply
 - `wanctl` 是 mwan3 配置的唯一来源，手改 LuCI 的 mwan3 页面会在下次
   `apply` 时被覆盖；策略请用 `wanctl route/default` 或直接改 `wanctl` 配置。
 - `mode=port` 会占用一个 LAN 口（默认 `lan3`），关闭 wan2 时会自动还回网桥。
+- 上游网段不要和本机 LAN 网段冲突（例如 LAN 是 `192.168.1.0/24`，wan2 静态
+  地址就不要再给 `192.168.1.x`）。
 - `mode=lan` 依赖 `kmod-macvlan`，上游交换机如果做了端口隔离可能不生效。
 - mwan3 是**按连接**均衡，不是按包；单条大流量连接不会叠加带宽。
 - 多路上行同时 `peerdns` 会让 `resolv.conf.auto` 抖动，`wwan`/`usbwan`

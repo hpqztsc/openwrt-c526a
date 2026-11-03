@@ -8,4 +8,8 @@ for p in /root/.android /etc/adb-sms.state; do
 	grep -qx "$p" /etc/sysupgrade.conf 2>/dev/null || echo "$p" >> /etc/sysupgrade.conf
 done
 
+for s in adb adbnet adbsms; do
+	[ -x "/etc/init.d/$s" ] && "/etc/init.d/$s" enable
+done
+
 exit 0

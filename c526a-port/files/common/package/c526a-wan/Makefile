@@ -30,6 +30,14 @@ define Package/c526a-wan/conffiles
 /etc/config/wanctl
 endef
 
+define Package/c526a-wan/postinst
+#!/bin/sh
+[ -x /etc/init.d/wanctl ] && /etc/init.d/wanctl enable
+[ -x /etc/init.d/mwan3 ] && /etc/init.d/mwan3 enable
+[ -x /usr/bin/wanctl ] && /usr/bin/wanctl apply >/dev/null 2>&1
+exit 0
+endef
+
 define Package/c526a-wan/install
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/wanctl $(1)/etc/config/wanctl

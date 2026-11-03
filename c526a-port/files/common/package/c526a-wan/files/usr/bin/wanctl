@@ -76,6 +76,21 @@ brlan_section() {
 	return 1
 }
 
+link_opts() {
+	local name=$1 iface=$2 defmetric=$3 metric peerdns dns
+
+	metric=$(cget "$name.metric")
+	[ -n "$metric" ] || metric=$defmetric
+	u_set "network.$iface.metric" "$metric"
+
+	peerdns=$(cget "$name.peerdns")
+	[ -n "$peerdns" ] || peerdns=0
+	u_set "network.$iface.peerdns" "$peerdns"
+
+	dns=$(cget "$name.dns")
+	[ -n "$dns" ] && u_set "network.$iface.dns" "$dns"
+}
+
 ensure_wan2() {
 	local mode port proto ipaddr netmask gateway br mac
 
@@ -112,14 +127,21 @@ ensure_wan2() {
 		[ -n "$netmask" ] && u_set network.wan2.netmask "$netmask"
 		[ -n "$gateway" ] && u_set network.wan2.gateway "$gateway"
 	fi
+	if [ "$proto" = "pppoe" ]; then
+		u_set network.wan2.username "$(cget wan2.username)"
+		u_set network.wan2.password "$(cget wan2.password)"
+		[ -n "$(cget wan2.service)" ] && u_set network.wan2.service "$(cget wan2.service)"
+	fi
+
+	link_opts wan2 wan2 20
 }
 
 ensure_wwan() {
 	if ! uci -q get network.wwan >/dev/null 2>&1; then
 		u_set network.wwan interface
 		u_set network.wwan.proto dhcp
-		u_set network.wwan.peerdns 0
 	fi
+	link_opts wwan wwan 30
 }
 
 ensure_usbwan() {
@@ -147,12 +169,16 @@ ensure_usbwan() {
 		u_set network.usbwan.pdptype "$(cget usbwan.pdptype)"
 		;;
 	esac
+
+	link_opts usbwan usbwan 40
 }
 
 ensure_firewall() {
 	local zone name iface
 
 	zone=$(zone_wan) || return 0
+	u_set "firewall.$zone.masq" 1
+	u_set "firewall.$zone.mtu_fix" 1
 	for name in $(ordered_uplinks); do
 		[ "$(cget "$name.enabled")" = 1 ] || continue
 		iface=$(cget "$name.interface")
@@ -163,7 +189,7 @@ ensure_firewall() {
 }
 
 mwan3_conf() {
-	local name iface idx=0 ips ip reliability default_policy via r k v enabled
+	local name iface idx=0 ips ip reliability default_policy via r k v enabled tm
 
 	echo "config globals 'globals'"
 	echo "	option mmx_mask '0x3F00'"
@@ -181,10 +207,13 @@ mwan3_conf() {
 		for i in $ips; do ip=$((ip + 1)); done
 		reliability=$ip
 		[ "$reliability" -ge 1 ] || reliability=1
+		tm=$(cget "$name.track_method")
+		[ -n "$tm" ] || tm=ping
 
 		echo "config interface 'wanctl_$name'"
 		echo "	option enabled '1'"
 		echo "	option family 'ipv4'"
+		echo "	option track_method '$tm'"
 		echo "	option reliability '$reliability'"
 		echo "	option count '1'"
 		echo "	option timeout '2'"
@@ -330,11 +359,74 @@ usb_detect() {
 		[ -e "$d/device" ] || continue
 		drv=$(basename "$(readlink -f "$d/device/driver" 2>/dev/null)" 2>/dev/null)
 		case "$drv" in
-		rndis_host|cdc_ether|cdc_ncm|qmi_wwan|cdc_mbim|ipheth)
+		rndis_host|cdc_ether|cdc_ncm|qmi_wan|qmi_wwan|cdc_mbim|ipheth)
 			echo "$n $drv"
 			;;
 		esac
 	done
+}
+
+check() {
+	local name iface mode port proto br lanip bad=0
+
+	command -v mwan3 >/dev/null 2>&1 || { echo "WARN: mwan3 is not installed"; bad=1; }
+
+	for name in $(uplinks); do
+		[ "$(cget "$name.enabled")" = 1 ] || continue
+		iface=$(cget "$name.interface")
+		[ -n "$iface" ] || iface=$name
+		uci -q get "network.$iface" >/dev/null 2>&1 || {
+			echo "WARN: $name: network.$iface does not exist"
+			bad=1
+		}
+
+		if [ "$name" = wan2 ]; then
+			mode=$(cget wan2.mode)
+			proto=$(cget wan2.proto)
+			if [ "$mode" = port ]; then
+				port=$(cget wan2.port)
+				[ -n "$port" ] || { echo "WARN: wan2.port is empty"; bad=1; }
+				[ -e "/sys/class/net/$port" ] || {
+					echo "WARN: $port is not present in the kernel"
+					bad=1
+				}
+				br=$(brlan_section)
+				if [ -n "$br" ] && uci -q get "network.$br.ports" 2>/dev/null | grep -qw "$port"; then
+					echo "WARN: $port is still a member of br-lan (run 'wanctl apply')"
+					bad=1
+				fi
+			fi
+			if [ "$proto" = static ]; then
+				for k in ipaddr netmask gateway; do
+					[ -n "$(cget "wan2.$k")" ] || {
+						echo "WARN: wan2.$k is empty"
+						bad=1
+					}
+				done
+				lanip=$(uci -q get network.lan.ipaddr)
+				[ -n "$lanip" ] && [ "$lanip" = "$(cget wan2.ipaddr)" ] && {
+					echo "WARN: wan2.ipaddr equals the LAN address"
+					bad=1
+				}
+			fi
+		fi
+
+		if [ "$name" = usbwan ]; then
+			proto=$(cget usbwan.proto)
+			case "$proto" in
+			qmi|mbim)
+				[ -n "$(cget usbwan.device)" ] || {
+					echo "WARN: usbwan.device is empty for $proto"
+					bad=1
+				}
+				[ -n "$(cget usbwan.apn)" ] || echo "WARN: usbwan.apn is empty"
+				;;
+			esac
+		fi
+	done
+
+	[ "$bad" = 0 ] && echo "check: OK"
+	return "$bad"
 }
 
 usage() {
@@ -342,8 +434,12 @@ usage() {
 usage: wanctl <command>
 
   apply                     write network/firewall/mwan3 config and reload
+  check                     validate the current wanctl configuration
   status                    show uplink and mwan3 status
   uplink list|enable|disable <name>
+  wan2 port <lanX> dhcp|static [ip mask gateway]
+  wan2 lan
+  wan2 off
   set <section> <option> <value>
   default failover|balanced
   route add <name> via=<uplink> [src_ip=..] [dest_ip=..] [src_port=..] [dest_port=..] [proto=..]
@@ -392,6 +488,41 @@ set)
 	uci set "$WANCTL.$sec.$opt=$*"
 	uci commit "$WANCTL"
 	apply
+	;;
+check)
+	check
+	;;
+wan2)
+	act=$1; shift
+	case "$act" in
+	port)
+		port=$1; proto=$2; shift 2
+		[ -n "$port" ] && [ -n "$proto" ] || { usage; exit 1; }
+		uci set "$WANCTL.wan2.enabled=1"
+		uci set "$WANCTL.wan2.mode=port"
+		uci set "$WANCTL.wan2.port=$port"
+		uci set "$WANCTL.wan2.proto=$proto"
+		if [ "$proto" = static ]; then
+			[ -n "$1" ] && uci set "$WANCTL.wan2.ipaddr=$1"
+			[ -n "$2" ] && uci set "$WANCTL.wan2.netmask=$2"
+			[ -n "$3" ] && uci set "$WANCTL.wan2.gateway=$3"
+		fi
+		uci commit "$WANCTL"
+		apply
+		;;
+	lan)
+		uci set "$WANCTL.wan2.enabled=1"
+		uci set "$WANCTL.wan2.mode=lan"
+		uci commit "$WANCTL"
+		apply
+		;;
+	off)
+		uci set "$WANCTL.wan2.enabled=0"
+		uci commit "$WANCTL"
+		apply
+		;;
+	*) usage; exit 1 ;;
+	esac
 	;;
 default)
 	uci set "$WANCTL.globals.default_policy=$1"
