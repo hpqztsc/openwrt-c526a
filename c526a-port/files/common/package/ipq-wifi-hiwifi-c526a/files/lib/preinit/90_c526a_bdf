@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# Install the HiWiFi C526A QCA4019 board file after the overlay is
+# mounted but before /etc/init.d/boot calls kmodloader (which probes
+# ath10k).  Running it from preinst/postinst does not work during the
+# image build, and writing board-2.bin directly from the package clashes
+# with the file owned by ath10k-board-qca4019.
+#
+c526a_bdf() {
+	local bdf=/lib/firmware/ath10k/QCA4019/hw1.0/board-hiwifi_c526a.bin
+	local dst=/lib/firmware/ath10k/QCA4019/hw1.0/board-2.bin
+
+	[ -f "$bdf" ] && cp -f "$bdf" "$dst"
+}
+
+[ "$INITRAMFS" = "1" ] || boot_hook_add preinit_main c526a_bdf

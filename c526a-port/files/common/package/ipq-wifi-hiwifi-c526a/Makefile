@@ -28,12 +28,15 @@ define Package/ipq-wifi-hiwifi-c526a/description
 endef
 
 # The device definition removes the default ath10k-board-qca4019 package
-# with "-ath10k-board-qca4019", so this file is the only owner of
-# board-2.bin and apk/opkg do not complain about an overwrite.
+# with "-ath10k-board-qca4019".  board-2.bin is still owned by it in the
+# staging root, so install under a private name and let the preinit hook
+# swap it in before ath10k probes.
 define Package/ipq-wifi-hiwifi-c526a/install
 	$(INSTALL_DIR) $(1)/lib/firmware/ath10k/QCA4019/hw1.0
 	$(INSTALL_DATA) ./files/board-hiwifi_c526a.qca4019 \
-		$(1)/lib/firmware/ath10k/QCA4019/hw1.0/board-2.bin
+		$(1)/lib/firmware/ath10k/QCA4019/hw1.0/board-hiwifi_c526a.bin
+	$(INSTALL_DIR) $(1)/lib/preinit
+	$(INSTALL_BIN) ./files/lib/preinit/90_c526a_bdf $(1)/lib/preinit/90_c526a_bdf
 endef
 
 $(eval $(call BuildPackage,ipq-wifi-hiwifi-c526a))
