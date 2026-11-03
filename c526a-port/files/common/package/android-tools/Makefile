@@ -100,9 +100,12 @@ PROTOBUF_HOST_DIR := $(if $(wildcard $(TOPDIR)/package/feeds/packages/protobuf),
 
 define Build/Configure
 	+$(MAKE) -C $(TOPDIR) $(PROTOBUF_HOST_DIR)/host/compile V=s
-	[ ! -x $(STAGING_DIR_HOSTPKG)/bin/protoc ] || \
-		cp -f $(STAGING_DIR_HOSTPKG)/bin/protoc \
-			$(STAGING_DIR)/usr/bin/protoc-3.17.3.0 || true
+	# ProtobufConfig.cmake points protobuf::protoc at the target (musl/ARM)
+	# binary, which cannot run on the build host.  Replace every protoc
+	# binary that ended up in staging with the host build of protoc.
+	for f in $(STAGING_DIR)/usr/bin/protoc $(STAGING_DIR)/usr/bin/protoc-*; do \
+		[ -e "$$f" ] && cp -f $(STAGING_DIR_HOSTPKG)/bin/protoc "$$f"; \
+	done
 	$(call Build/Configure/Default)
 endef
 
