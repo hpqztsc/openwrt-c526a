@@ -54,7 +54,7 @@ while :; do
 	last=$(cat "$STATE" 2>/dev/null)
 	case "$last" in ''|*[!0-9]*) last=0 ;; esac
 
-	if /usr/bin/adb get-state >/dev/null 2>&1; then
+	if /usr/bin/adb devices 2>/dev/null | awk 'NR>1 && $2=="device"{f=1} END{exit !f}'; then
 		cat > /tmp/adb-sms.query <<EOF
 content query --uri content://sms/inbox --where "_id>$last" --projection _id,address,date,body --sort "date ASC"
 EOF

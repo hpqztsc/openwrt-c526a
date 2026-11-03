@@ -65,10 +65,11 @@ WireGuard, `ttyd` (web console).
 `irqbalance`, `openssh-sftp-server`, Chinese LuCI translations.
 
 **ADB host + SMS bridge**
-`c526a-adb` (see below) and the vendored `adb` package from
-`nmeum/android-tools` 35.0.2. Current OpenWrt feeds do not ship `adb`, so
-`package/android-tools` (plus `package/brotli`, which it needs) is carried in
-this repo.
+`c526a-adb` (see below) on top of the in-tree `adb` package
+(`package/utils/adb`, ADB 1.0.32). All four trees already ship it, so no
+extra source is vendored. It is an older adb: no `adb pair` (Android 11+
+wireless debugging) and no `exec-out`; `adb-ctl` falls back to
+`screencap` + `adb pull`.
 
 If the image does not fit the stock 44 MB `ubi` partition, drop `ksmbd`,
 `wireguard` or `bash` first.
@@ -145,8 +146,8 @@ adb-ctl tap 540 1200
 control of the phone to the whole LAN — only do that behind a firewall or
 WireGuard. The CGI endpoint is unauthenticated unless `api_token` is set.
 
-`adb` and its dependencies (protobuf, abseil, brotli, ...) add roughly 7 MB to
-the image.
+Image impact is small (a few hundred KB): this uses the `adb` package that
+already exists in every supported tree.
 
 ## Known limitations / verify on hardware
 

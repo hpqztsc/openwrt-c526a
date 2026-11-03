@@ -16,7 +16,8 @@ start_service() {
 	if [ "$listen_lan" = 1 ]; then
 		procd_set_param command /usr/bin/adb -a nodaemon server
 	else
-		procd_set_param command /usr/bin/adb -L tcp:127.0.0.1:5037 nodaemon server
+		# the in-tree adb (1.0.32) only knows the default localhost:5037
+		procd_set_param command /usr/bin/adb nodaemon server
 	fi
 	procd_set_param env HOME=/root
 	procd_set_param respawn 3600 5 0

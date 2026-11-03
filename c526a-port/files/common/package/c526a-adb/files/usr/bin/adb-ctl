@@ -28,7 +28,14 @@ EOF
 		;;
 	shot)
 		out="${1:-/tmp/screen.png}"
-		adb exec-out screencap -p > "$out" && echo "$out"
+		if adb exec-out screencap -p > "$out" 2>/dev/null && [ -s "$out" ]; then
+			echo "$out"
+		else
+			adb shell screencap -p /data/local/tmp/_adb_shot.png &&
+			adb pull /data/local/tmp/_adb_shot.png "$out" >/dev/null &&
+			adb shell rm -f /data/local/tmp/_adb_shot.png &&
+			echo "$out"
+		fi
 		;;
 	tap)
 		adb shell input tap "$1" "$2"
@@ -43,7 +50,11 @@ EOF
 		adb shell input keyevent "$1"
 		;;
 	ui)
-		adb exec-out uiautomator dump /dev/tty
+		if ! adb exec-out uiautomator dump /dev/tty 2>/dev/null; then
+			adb shell uiautomator dump /data/local/tmp/_adb_ui.xml >/dev/null &&
+			adb shell cat /data/local/tmp/_adb_ui.xml &&
+			adb shell rm -f /data/local/tmp/_adb_ui.xml
+		fi
 		;;
 	install)
 		adb install -r "$1"
