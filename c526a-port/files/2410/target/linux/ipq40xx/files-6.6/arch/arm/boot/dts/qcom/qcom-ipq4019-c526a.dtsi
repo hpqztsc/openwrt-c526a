@@ -206,22 +206,27 @@
 	status = "okay";
 };
 
-&pcie0 {
-	status = "okay";
-	perst-gpios = <&tlmm 38 GPIO_ACTIVE_LOW>;
-	wake-gpios = <&tlmm 50 GPIO_ACTIVE_LOW>;
-};
-
 /*
  * MT7615E (2.4 GHz) sits behind the PCIe root port.
  * The board EEPROM is stored at offset 0 of the "Factory" SPI-NOR partition.
  */
-&pcie_bridge0 {
-	wifi@1,0 {
-		compatible = "mediatek,mt76";
-		reg = <0x0000 0 0 0 0>;
-		mediatek,mtd-eeprom = <&factory 0x0000>;
-		ieee80211-freq-limit = <2400000 2500000>;
+&pcie0 {
+	status = "okay";
+	perst-gpio = <&tlmm 38 GPIO_ACTIVE_LOW>;
+	wake-gpio = <&tlmm 50 GPIO_ACTIVE_LOW>;
+
+	bridge@0,0 {
+		reg = <0x00000000 0 0 0 0>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+		ranges;
+
+		wifi@1,0 {
+			compatible = "mediatek,mt76";
+			reg = <0x00010000 0 0 0 0>;
+			mediatek,mtd-eeprom = <&factory 0x0000>;
+			ieee80211-freq-limit = <2400000 2500000>;
+		};
 	};
 };
 
@@ -329,11 +334,11 @@
 &wifi0 {
 	status = "okay";
 	ieee80211-freq-limit = <5470000 5875000>;
-	qcom,calibration-variant = "C526A";
+	qcom,ath10k-calibration-variant = "C526A";
 };
 
 &wifi1 {
 	status = "okay";
 	ieee80211-freq-limit = <5170000 5350000>;
-	qcom,calibration-variant = "C526A";
+	qcom,ath10k-calibration-variant = "C526A";
 };

@@ -1,23 +1,48 @@
-name: Build OpenWrt main (HiWiFi C526A)
+name: Build OpenWrt (HiWiFi C526A)
 
 on:
   workflow_dispatch:
   repository_dispatch:
   push:
     paths:
-      - 'c526a-port/**'
+      - 'c526a-port/patches/**'
+      - 'c526a-port/files/**'
+      - 'c526a-port/config/**'
+      - 'c526a-port/apply.sh'
       - '.github/workflows/build-c526a-main.yml'
 
 env:
-  REPO_URL: https://github.com/openwrt/openwrt
-  REPO_BRANCH: main
-  CONFIG_FILE: c526a-port/config/c526a.config
   TZ: Asia/Shanghai
 
 jobs:
   build:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-22.04
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: openwrt-main
+            repo: https://github.com/openwrt/openwrt
+            branch: main
+            port: main
+            config: main
+          - name: openwrt-24.10
+            repo: https://github.com/openwrt/openwrt
+            branch: openwrt-24.10
+            port: 2410
+            config: 2410
+          - name: immortalwrt
+            repo: https://github.com/immortalwrt/immortalwrt
+            branch: master
+            port: main
+            config: immortalwrt
+          - name: lede
+            repo: https://github.com/coolsnowwolf/lede
+            branch: master
+            port: main
+            config: lede
 
     steps:
     - name: Checkout
@@ -47,17 +72,24 @@ jobs:
           upx-ucl vim wget xmlto xxd zlib1g-dev zstd
         sudo timedatectl set-timezone "$TZ"
 
-    - name: Clone OpenWrt
+    - name: Clone ${{ matrix.name }}
       run: |
-        git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
+        git clone --depth 1 -b ${{ matrix.branch }} ${{ matrix.repo }} openwrt
         cd openwrt && git log --oneline -1
 
+    - name: Update and install feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
     - name: Apply C526A board support
-      run: sh c526a-port/apply.sh openwrt
+      run: sh c526a-port/apply.sh ${{ matrix.port }} openwrt
 
     - name: Configure
       run: |
-        cp $CONFIG_FILE openwrt/.config
+        cat c526a-port/config/common.config \
+            c526a-port/config/${{ matrix.config }}.config > openwrt/.config
         cd openwrt
         make defconfig
         echo "--- selected target ---"
@@ -77,7 +109,7 @@ jobs:
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
-        name: openwrt-main-hiwifi_c526a
+        name: openwrt-c526a-${{ matrix.name }}
         path: |
           openwrt/bin/targets/ipq40xx/generic/*.ubi
           openwrt/bin/targets/ipq40xx/generic/*.bin

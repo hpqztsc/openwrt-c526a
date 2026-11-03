@@ -88,15 +88,15 @@ index 29f77ab..aec7c6e 100644
  	mobipromo,cm520-79f|\
  	netgear,lbr20|\
 diff --git a/target/linux/ipq40xx/image/generic.mk b/target/linux/ipq40xx/image/generic.mk
-index 8167391..7e43594 100644
+index 8167391..6836625 100644
 --- a/target/linux/ipq40xx/image/generic.mk
 +++ b/target/linux/ipq40xx/image/generic.mk
-@@ -1497,3 +1497,24 @@ define Device/zyxel_wre6606
+@@ -1497,3 +1497,28 @@ define Device/zyxel_wre6606
  endef
  # Missing DSA Setup
  #TARGET_DEVICES += zyxel_wre6606
 +
-+define Device/hiwifi_c526a
++define Device/hiwifi_c526a_common
 +	$(call Device/FitzImage)
 +	$(call Device/UbiFit)
 +	DEVICE_VENDOR := HiWiFi
@@ -105,12 +105,16 @@ index 8167391..7e43594 100644
 +	BLOCKSIZE := 128k
 +	PAGESIZE := 2048
 +	DEVICE_PACKAGES := ipq-wifi-hiwifi-c526a kmod-mt7615e kmod-mt7615-firmware
++endef
++
++define Device/hiwifi_c526a
++	$(call Device/hiwifi_c526a_common)
 +	SUPPORTED_DEVICES += hiwifi,c526a
 +endef
 +TARGET_DEVICES += hiwifi_c526a
 +
 +define Device/hiwifi_c526a-128m
-+	$(call Device/hiwifi_c526a)
++	$(call Device/hiwifi_c526a_common)
 +	DEVICE_VARIANT := 128M NAND
 +	DEVICE_DTS := qcom-ipq4019-c526a-128m
 +	SUPPORTED_DEVICES += hiwifi,c526a-128m
