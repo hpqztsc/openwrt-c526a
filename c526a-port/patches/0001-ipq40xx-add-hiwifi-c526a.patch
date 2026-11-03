@@ -1,0 +1,118 @@
+diff --git a/target/linux/ipq40xx/base-files/etc/board.d/02_network b/target/linux/ipq40xx/base-files/etc/board.d/02_network
+index 5193c6c..b536e8d 100644
+--- a/target/linux/ipq40xx/base-files/etc/board.d/02_network
++++ b/target/linux/ipq40xx/base-files/etc/board.d/02_network
+@@ -109,6 +109,10 @@ ipq40xx_setup_interfaces()
+ 	mobipromo,cm520-79f)
+ 		ucidef_set_interfaces_lan_wan "lan1 lan2" "wan"
+ 		;;
++	hiwifi,c526a|\
++	hiwifi,c526a-128m)
++		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" "wan"
++		;;
+ 	meraki,gx20|\
+ 	meraki,z3|\
+ 	meraki,z3c)
+@@ -219,6 +223,12 @@ ipq40xx_setup_macs()
+ 		wan_mac=$(get_mac_label)
+ 		lan_mac=$(macaddr_add "$wan_mac" 1)
+ 		;;
++	hiwifi,c526a|\
++	hiwifi,c526a-128m)
++		lan_mac=$(mtd_get_mac_ascii bdinfo "Vfac_mac ")
++		wan_mac=$(macaddr_add "$lan_mac" 1)
++		label_mac=$lan_mac
++		;;
+ 	netgear,rbr40|\
+ 	netgear,rbr50|\
+ 	netgear,srr60|\
+diff --git a/target/linux/ipq40xx/base-files/etc/hotplug.d/firmware/11-ath10k-caldata b/target/linux/ipq40xx/base-files/etc/hotplug.d/firmware/11-ath10k-caldata
+index c1dcf20..2535a61 100644
+--- a/target/linux/ipq40xx/base-files/etc/hotplug.d/firmware/11-ath10k-caldata
++++ b/target/linux/ipq40xx/base-files/etc/hotplug.d/firmware/11-ath10k-caldata
+@@ -70,6 +70,11 @@ case "$FIRMWARE" in
+ 		( [ -f "$wlan_data" ] && caldata_sysfsload_from_file "$wlan_data" 0x0 0x2f20 ) || \
+ 		( [ -d "$wlan_data" ] && caldata_sysfsload_from_file "$wlan_data/data_0" 0x0 0x2f20 )
+ 		;;
++	hiwifi,c526a|\
++	hiwifi,c526a-128m)
++		caldata_extract "ART" 0x1000 0x2f20
++		ath10k_patch_mac $(macaddr_add $(mtd_get_mac_ascii bdinfo "Vfac_mac ") 2)
++		;;
+ 	pakedge,wr-1)
+ 		caldata_extract "0:ART" 0x1000 0x2f20
+ 		ath10k_patch_mac $(macaddr_add $(get_mac_label) 2)
+@@ -138,6 +143,11 @@ case "$FIRMWARE" in
+ 		( [ -f "$wlan_data" ] && caldata_sysfsload_from_file "$wlan_data" 0x8000 0x2f20 ) || \
+ 		( [ -d "$wlan_data" ] && caldata_sysfsload_from_file "$wlan_data/data_2" 0x0 0x2f20 )
+ 		;;
++	hiwifi,c526a|\
++	hiwifi,c526a-128m)
++		caldata_extract "ART" 0x5000 0x2f20
++		ath10k_patch_mac $(macaddr_add $(mtd_get_mac_ascii bdinfo "Vfac_mac ") 3)
++		;;
+ 	pakedge,wr-1)
+ 		caldata_extract "0:ART" 0x5000 0x2f20
+ 		ath10k_patch_mac $(macaddr_add $(get_mac_label) 4)
+diff --git a/target/linux/ipq40xx/base-files/lib/preinit/05_set_iface_mac_ipq40xx.sh b/target/linux/ipq40xx/base-files/lib/preinit/05_set_iface_mac_ipq40xx.sh
+index 6f7f656..ed104c0 100644
+--- a/target/linux/ipq40xx/base-files/lib/preinit/05_set_iface_mac_ipq40xx.sh
++++ b/target/linux/ipq40xx/base-files/lib/preinit/05_set_iface_mac_ipq40xx.sh
+@@ -6,6 +6,15 @@ preinit_set_mac_address() {
+ 		base_mac=$(cat /sys/class/net/eth0/address)
+ 		ip link set dev eth1 address $(macaddr_add "$base_mac" 1)
+ 		;;
++	hiwifi,c526a|\
++	hiwifi,c526a-128m)
++		base_mac="$(mtd_get_mac_ascii bdinfo "Vfac_mac ")"
++		ip link set dev eth0 address "$base_mac"
++		ip link set dev lan1 address "$base_mac"
++		ip link set dev lan2 address "$base_mac"
++		ip link set dev lan3 address "$base_mac"
++		ip link set dev wan address "$(macaddr_add "$base_mac" 1)"
++		;;
+ 	teltonika,rutx50)
+ 		# Vendor Bootloader removes nvmem-cells from partition,
+ 		# so this needs to be done here.
+diff --git a/target/linux/ipq40xx/base-files/lib/upgrade/platform.sh b/target/linux/ipq40xx/base-files/lib/upgrade/platform.sh
+index 29f77ab..aec7c6e 100644
+--- a/target/linux/ipq40xx/base-files/lib/upgrade/platform.sh
++++ b/target/linux/ipq40xx/base-files/lib/upgrade/platform.sh
+@@ -120,6 +120,8 @@ platform_do_upgrade() {
+ 	engenius,eap2200|\
+ 	glinet,gl-a1300|\
+ 	glinet,gl-ap1300|\
++	hiwifi,c526a|\
++	hiwifi,c526a-128m|\
+ 	luma,wrtq-329acn|\
+ 	mobipromo,cm520-79f|\
+ 	netgear,lbr20|\
+diff --git a/target/linux/ipq40xx/image/generic.mk b/target/linux/ipq40xx/image/generic.mk
+index 8167391..7e43594 100644
+--- a/target/linux/ipq40xx/image/generic.mk
++++ b/target/linux/ipq40xx/image/generic.mk
+@@ -1497,3 +1497,24 @@ define Device/zyxel_wre6606
+ endef
+ # Missing DSA Setup
+ #TARGET_DEVICES += zyxel_wre6606
++
++define Device/hiwifi_c526a
++	$(call Device/FitzImage)
++	$(call Device/UbiFit)
++	DEVICE_VENDOR := HiWiFi
++	DEVICE_MODEL := C526A
++	SOC := qcom-ipq4019
++	BLOCKSIZE := 128k
++	PAGESIZE := 2048
++	DEVICE_PACKAGES := ipq-wifi-hiwifi-c526a kmod-mt7615e kmod-mt7615-firmware
++	SUPPORTED_DEVICES += hiwifi,c526a
++endef
++TARGET_DEVICES += hiwifi_c526a
++
++define Device/hiwifi_c526a-128m
++	$(call Device/hiwifi_c526a)
++	DEVICE_VARIANT := 128M NAND
++	DEVICE_DTS := qcom-ipq4019-c526a-128m
++	SUPPORTED_DEVICES += hiwifi,c526a-128m
++endef
++TARGET_DEVICES += hiwifi_c526a-128m

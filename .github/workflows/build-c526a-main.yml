@@ -1,0 +1,86 @@
+name: Build OpenWrt main (HiWiFi C526A)
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+  push:
+    paths:
+      - 'c526a-port/**'
+      - '.github/workflows/build-c526a-main.yml'
+
+env:
+  REPO_URL: https://github.com/openwrt/openwrt
+  REPO_BRANCH: main
+  CONFIG_FILE: c526a-port/config/c526a.config
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+        df -hT
+
+    - name: Install build dependencies
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install -y \
+          ack antlr3 asciidoc autoconf automake autopoint binutils bison \
+          build-essential bzip2 ccache cmake cpio curl device-tree-compiler \
+          fastjar flex gawk gettext gcc-multilib g++-multilib git gperf \
+          haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev \
+          libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
+          libncurses-dev libpython3-dev libreadline-dev libssl-dev libtool \
+          lrzsz mkisofs msmtp ninja-build p7zip-full patch pkgconf python3 \
+          python3-pyelftools python3-setuptools qemu-utils rsync scons \
+          squashfs-tools subversion swig texinfo time uglifyjs unzip \
+          upx-ucl vim wget xmlto xxd zlib1g-dev zstd
+        sudo timedatectl set-timezone "$TZ"
+
+    - name: Clone OpenWrt
+      run: |
+        git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
+        cd openwrt && git log --oneline -1
+
+    - name: Apply C526A board support
+      run: sh c526a-port/apply.sh openwrt
+
+    - name: Configure
+      run: |
+        cp $CONFIG_FILE openwrt/.config
+        cd openwrt
+        make defconfig
+        echo "--- selected target ---"
+        grep -E '^CONFIG_TARGET_(ipq40xx|MULTI_PROFILE)|DEVICE_hiwifi' .config
+
+    - name: Download packages
+      run: cd openwrt && make download -j8
+
+    - name: Compile firmware
+      run: |
+        cd openwrt
+        echo "$(nproc) threads"
+        make -j$(nproc) || make -j1 V=s
+        echo "--- images ---"
+        find bin/targets/ipq40xx -maxdepth 3 -type f -printf '%p %s\n'
+
+    - name: Upload firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: openwrt-main-hiwifi_c526a
+        path: |
+          openwrt/bin/targets/ipq40xx/generic/*.ubi
+          openwrt/bin/targets/ipq40xx/generic/*.bin
+          openwrt/bin/targets/ipq40xx/generic/*.itb
+          openwrt/bin/targets/ipq40xx/generic/*.tar
+        if-no-files-found: error
