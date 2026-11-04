@@ -92,7 +92,7 @@ link_opts() {
 }
 
 ensure_wan2() {
-	local mode port proto ipaddr netmask gateway br mac
+	local mode port proto ipaddr netmask gateway br mac p in_br
 
 	mode=$(cget wan2.mode)
 	port=$(cget wan2.port)
@@ -110,6 +110,15 @@ ensure_wan2() {
 		u_set network.wan2.proto "$proto"
 		u_set network.wan2.device "$port"
 	else
+		# mode=lan: give the port used by mode=port back to the LAN bridge
+		br=$(brlan_section)
+		if [ -n "$br" ]; then
+			in_br=0
+			for p in $(uci -q get "network.$br.ports"); do
+				[ "$p" = "$port" ] && in_br=1
+			done
+			[ "$in_br" = 1 ] || u_add_list "network.$br.ports" "$port"
+		fi
 		u_set network.wan2dev device
 		u_set network.wan2dev.name wan2dev
 		u_set network.wan2dev.type macvlan
@@ -220,7 +229,7 @@ mwan3_conf() {
 		up=$(cget "$name.up"); [ -n "$up" ] || up=2
 		flush=$(cget "$name.flush_conntrack"); [ -n "$flush" ] || flush=1
 
-		echo "config interface 'wanctl_$name'"
+		echo "config interface '$iface'"
 		echo "	option enabled '1'"
 		echo "	option family 'ipv4'"
 		echo "	option track_method '$tm'"
@@ -267,7 +276,7 @@ mwan3_conf() {
 	echo
 	for name in $(ordered_uplinks); do
 		[ "$(cget "$name.enabled")" = 1 ] || continue
-		echo "config policy 'wanctl_only_$name'"
+		echo "config policy 'wanctl_o_$name'"
 		echo "	list use_member 'wanctl_${name}_o'"
 		echo
 	done
@@ -291,7 +300,7 @@ mwan3_conf() {
 			v=$(cget "$r.$k")
 			[ -n "$v" ] && echo "	option $k '$v'"
 		done
-		echo "	option use_policy 'wanctl_only_$via'"
+		echo "	option use_policy 'wanctl_o_$via'"
 		echo "	option sticky '1'"
 		[ "$(cget "$r.logging")" = 1 ] && echo "	option logging '1'"
 		echo

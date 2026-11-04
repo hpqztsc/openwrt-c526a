@@ -35,6 +35,10 @@ define Package/c526a-wan/install
 	$(INSTALL_CONF) ./files/etc/config/wanctl $(1)/etc/config/wanctl
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/wanctl $(1)/etc/init.d/wanctl
+	$(INSTALL_DIR) $(1)/www/wan
+	$(INSTALL_DATA) ./files/www/wan/index.html $(1)/www/wan/index.html
+	$(INSTALL_DIR) $(1)/www/cgi-bin
+	$(INSTALL_BIN) ./files/www/cgi-bin/wan-api $(1)/www/cgi-bin/wan-api
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) ./files/usr/bin/wanctl $(1)/usr/bin/wanctl
 	$(INSTALL_DIR) $(1)/etc/uci-defaults

@@ -6,4 +6,13 @@
 [ -x /etc/init.d/mwan3 ] && /etc/init.d/mwan3 enable
 [ -x /usr/bin/wanctl ] && /usr/bin/wanctl apply >/dev/null 2>&1
 
+
+if [ -z "$(uci -q get wanctl.globals.api_token)" ]; then
+	tok=$(head -c 32 /dev/urandom | md5sum | cut -c1-16)
+	uci set wanctl.globals.api_token="$tok"
+	uci commit wanctl
+	echo "$tok" > /root/wan-token
+	chmod 600 /root/wan-token
+fi
+
 exit 0

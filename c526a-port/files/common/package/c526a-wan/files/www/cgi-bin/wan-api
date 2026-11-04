@@ -1,0 +1,191 @@
+#!/bin/sh
+#
+# JSON API for the multi-WAN web UI (/wan/).
+#
+. /usr/share/libubox/jshn.sh
+
+urldecode() {
+	local s="$1"
+	s="${s//+/ }"
+	printf '%b' "${s//%/\\x}"
+}
+
+get_param() {
+	local key="$1" pair
+	for pair in $(printf '%s' "${QUERY_STRING:-}" | tr '&' ' '); do
+		case "$pair" in
+		"$key="*) urldecode "${pair#*=}"; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+token=$(uci -q get wanctl.globals.api_token)
+req="${HTTP_X_TOKEN:-}"
+[ -n "$req" ] || req=$(get_param token)
+if [ -n "$token" ] && [ "$req" != "$token" ]; then
+	printf 'Status: 403 Forbidden\r\nContent-Type: application/json\r\n\r\n'
+	echo '{"error":"unauthorized"}'
+	exit 0
+fi
+
+action=$(get_param action)
+[ -n "$action" ] || action=status
+
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+
+uplink_names() {
+	uci -q show wanctl 2>/dev/null | sed -n 's/^wanctl\.\([^.=]*\)=uplink$/\1/p'
+}
+
+run_wanctl() {
+	/usr/bin/wanctl "$@" > /tmp/.wanapi.$$ 2>&1
+	json_init
+	json_add_string output "$(cat /tmp/.wanapi.$$)"
+	rm -f /tmp/.wanapi.$$
+	json_dump
+}
+
+case "$action" in
+status)
+	order=$(uci -q get wanctl.globals.order)
+	policy=$(uci -q get wanctl.globals.default_policy)
+	json_init
+	json_add_string order "$order"
+	json_add_string policy "$policy"
+
+	json_add_array uplinks
+	for name in $(uplink_names); do
+		iface=$(uci -q get "wanctl.$name.interface")
+		[ -n "$iface" ] || iface=$name
+		enabled=$(uci -q get "wanctl.$name.enabled")
+		[ -n "$enabled" ] || enabled=0
+		weight=$(uci -q get "wanctl.$name.weight")
+		[ -n "$weight" ] || weight=1
+		mode=$(uci -q get "wanctl.$name.mode")
+		port=$(uci -q get "wanctl.$name.port")
+		proto=$(uci -q get "wanctl.$name.proto")
+		ipaddr=$(uci -q get "wanctl.$name.ipaddr")
+		gateway=$(uci -q get "wanctl.$name.gateway")
+		st=$(ubus call "network.interface.$iface" status 2>/dev/null)
+		up=$(printf '%s' "$st" | jsonfilter -e '@.up' 2>/dev/null)
+		addr=$(printf '%s' "$st" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null)
+		gw=$(printf '%s' "$st" | jsonfilter -e '@.route[0].nexthop' 2>/dev/null)
+		carrier=""
+		[ -n "$port" ] && carrier=$(cat "/sys/class/net/$port/carrier" 2>/dev/null)
+
+		json_add_object
+		json_add_string name "$name"
+		json_add_string iface "$iface"
+		json_add_int enabled "$enabled"
+		json_add_int weight "$weight"
+		json_add_string mode "$mode"
+		json_add_string port "$port"
+		json_add_string proto "$proto"
+		json_add_string ipaddr "$ipaddr"
+		json_add_string gateway "$gateway"
+		json_add_boolean up "$([ "$up" = "true" ] && echo 1 || echo 0)"
+		json_add_string addr "$addr"
+		json_add_string gw "$gw"
+		json_add_string carrier "$carrier"
+		json_close_object
+	done
+	json_close_array
+
+	json_add_array usb
+	/usr/bin/wanctl usb-detect 2>/dev/null > /tmp/.wanusb.$$
+	while read -r dev drv; do
+		[ -n "$dev" ] || continue
+		json_add_object
+		json_add_string device "$dev"
+		json_add_string driver "$drv"
+		json_close_object
+	done < /tmp/.wanusb.$$
+	rm -f /tmp/.wanusb.$$
+	json_close_array
+
+	json_add_string check "$(/usr/bin/wanctl check 2>&1 | head -8)"
+	json_add_string mwan3 "$(mwan3 status 2>/dev/null | head -25)"
+	json_add_string log "$(logread 2>/dev/null | grep -i mwan3 | tail -15)"
+	json_dump
+	;;
+order)
+	list=$(get_param list)
+	[ -n "$list" ] || { json_init; json_add_string error "list required"; json_dump; exit 0; }
+	set -- $(printf '%s' "$list" | tr ',' ' ')
+	run_wanctl order "$@"
+	;;
+policy)
+	mode=$(get_param mode)
+	case "$mode" in
+	failover|balanced) run_wanctl default "$mode" ;;
+	*) json_init; json_add_string error "bad mode"; json_dump ;;
+	esac
+	;;
+uplink)
+	name=$(get_param name)
+	[ -n "$name" ] || { json_init; json_add_string error "name required"; json_dump; exit 0; }
+	enabled=$(get_param enabled)
+	weight=$(get_param weight)
+	[ -n "$enabled" ] && uci set "wanctl.$name.enabled=$enabled"
+	[ -n "$weight" ] && uci set "wanctl.$name.weight=$weight"
+	uci commit wanctl
+	run_wanctl apply
+	;;
+wan2)
+	mode=$(get_param mode)
+	port=$(get_param port)
+	proto=$(get_param proto)
+	ipaddr=$(get_param ipaddr)
+	gateway=$(get_param gateway)
+	user=$(get_param username)
+	pass=$(get_param password)
+	[ -n "$mode" ] && uci set "wanctl.wan2.mode=$mode"
+	[ -n "$port" ] && uci set "wanctl.wan2.port=$port"
+	[ -n "$proto" ] && uci set "wanctl.wan2.proto=$proto"
+	[ -n "$ipaddr" ] && uci set "wanctl.wan2.ipaddr=$ipaddr"
+	[ -n "$gateway" ] && uci set "wanctl.wan2.gateway=$gateway"
+	[ -n "$user" ] && uci set "wanctl.wan2.username=$user"
+	[ -n "$pass" ] && uci set "wanctl.wan2.password=$pass"
+	uci commit wanctl
+	run_wanctl apply
+	;;
+usb)
+	proto=$(get_param proto)
+	device=$(get_param device)
+	apn=$(get_param apn)
+	[ -n "$proto" ] && uci set "wanctl.usbwan.proto=$proto"
+	[ -n "$device" ] && uci set "wanctl.usbwan.device=$device"
+	[ -n "$apn" ] && uci set "wanctl.usbwan.apn=$apn"
+	uci commit wanctl
+	run_wanctl apply
+	;;
+usb-detect)
+	json_init
+	json_add_array usb
+	/usr/bin/wanctl usb-detect 2>/dev/null > /tmp/.wanusb.$$
+	while read -r dev drv; do
+		[ -n "$dev" ] || continue
+		json_add_object
+		json_add_string device "$dev"
+		json_add_string driver "$drv"
+		json_close_object
+	done < /tmp/.wanusb.$$
+	rm -f /tmp/.wanusb.$$
+	json_close_array
+	json_dump
+	;;
+apply)
+	run_wanctl apply
+	;;
+check)
+	json_init
+	json_add_string output "$(/usr/bin/wanctl check 2>&1)"
+	json_dump
+	;;
+*)
+	json_init
+	json_add_string error "unknown action"
+	json_dump
+	;;
+esac

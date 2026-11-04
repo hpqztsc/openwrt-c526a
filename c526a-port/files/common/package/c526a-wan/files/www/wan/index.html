@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多 WAN 控制台 - HiWiFi C526A</title>
+<style>
+:root { color-scheme: light dark; --bg:#f4f6f8; --card:#fff; --fg:#1f2328; --muted:#6b7280; --line:#d8dee4; --accent:#2563eb; --ok:#16a34a; --bad:#dc2626; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --card:#171a21; --fg:#e6e6e6; --muted:#9aa4b2; --line:#2a2f3a; --accent:#60a5fa; --ok:#4ade80; --bad:#f87171; } }
+* { box-sizing: border-box; }
+body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
+header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--card); border-bottom:1px solid var(--line); }
+h1 { font-size:17px; margin:0; }
+.token { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:12px; }
+.token input { width:150px; }
+main { padding:16px 18px 40px; max-width:1100px; margin:0 auto; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px; }
+.card h2 { font-size:14px; margin:0 0 10px; }
+.row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+input, select, button { font:inherit; }
+input, select { padding:6px 9px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); }
+button { padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); cursor:pointer; }
+button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+button:disabled { opacity:.45; cursor:default; }
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--muted); margin-right:6px; }
+.dot.up { background:var(--ok); }
+.dot.down { background:var(--bad); }
+.uplink { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
+.uplink:last-child { border-bottom:0; }
+.uplink .name { min-width:150px; }
+.uplink .meta { color:var(--muted); font-size:12px; }
+.prio { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.prio .item { border:1px solid var(--line); border-radius:8px; padding:6px 10px; display:flex; gap:8px; align-items:center; }
+.prio .item b { font-weight:600; }
+.prio button { padding:2px 7px; }
+pre { background:rgba(127,127,127,.12); padding:10px; border-radius:8px; overflow:auto; white-space:pre-wrap; font-size:12px; max-height:260px; }
+.muted { color:var(--muted); }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
+label.f { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>多 WAN 控制台 · HiWiFi C526A</h1>
+  <div class="token">
+    <span>API Token</span>
+    <input id="token" type="password" placeholder="见 /root/wan-token">
+    <button onclick="saveToken()">保存</button>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <h2>默认策略</h2>
+    <div class="row">
+      <button id="btnFailover" onclick="setPolicy('failover')">故障切换（按优先级）</button>
+      <button id="btnBalanced" onclick="setPolicy('balanced')">负载均衡（按权重）</button>
+      <button class="primary" onclick="refresh()">刷新</button>
+      <span id="policyHint" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>优先级（从上到下；点击箭头上移/下移，自动应用）</h2>
+    <div id="prio" class="prio muted">加载中…</div>
+  </div>
+
+  <div class="card">
+    <h2>上行链路</h2>
+    <div id="uplinks" class="muted">加载中…</div>
+  </div>
+
+  <div class="card">
+    <h2>第二 WAN（wan2 / lan3）</h2>
+    <div class="grid">
+      <label class="f">模式
+        <select id="w2mode"><option value="port">port（占用一个 LAN 口）</option><option value="lan">lan（br-lan 上 macvlan）</option></select>
+      </label>
+      <label class="f">端口
+        <select id="w2port"><option>lan1</option><option>lan2</option><option>lan3</option></select>
+      </label>
+      <label class="f">协议
+        <select id="w2proto"><option value="dhcp">DHCP</option><option value="static">静态</option><option value="pppoe">PPPoE</option></select>
+      </label>
+      <label class="f">IP 地址
+        <input id="w2ip" placeholder="192.168.2.2">
+      </label>
+      <label class="f">网关
+        <input id="w2gw" placeholder="192.168.2.1">
+      </label>
+      <label class="f">PPPoE 账号
+        <input id="w2user" placeholder="可选">
+      </label>
+      <label class="f">PPPoE 密码
+        <input id="w2pass" type="password" placeholder="可选">
+      </label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" onclick="saveWan2()">保存并应用</button>
+      <span class="muted">静态地址/网关只在“静态”时需要；PPPoE 账号只在“PPPoE”时需要。</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>USB 上行（usbwan）</h2>
+    <div class="grid">
+      <label class="f">协议
+        <select id="usbproto"><option value="dhcp">DHCP（RNDIS/ECM/NCM）</option><option value="qmi">QMI</option><option value="mbim">MBIM</option></select>
+      </label>
+      <label class="f">设备
+        <input id="usbdev" placeholder="usb0 / /dev/cdc-wdm0">
+      </label>
+      <label class="f">APN
+        <input id="usbapn" placeholder="cmnet">
+      </label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" onclick="saveUsb()">保存并应用</button>
+      <button onclick="detectUsb()">检测 USB 网卡</button>
+      <span id="usbHint" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>状态</h2>
+    <pre id="check">加载中…</pre>
+    <pre id="mwan3"></pre>
+    <pre id="log"></pre>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let token = localStorage.getItem('wanToken') || '';
+let status = null;
+$('#token').value = token;
+
+function saveToken() {
+  token = $('#token').value.trim();
+  localStorage.setItem('wanToken', token);
+  refresh();
+}
+
+async function api(action, params = {}) {
+  const q = new URLSearchParams(Object.assign({ action, token }, params));
+  const r = await fetch('/cgi-bin/wan-api?' + q.toString(), { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function dot(up, enabled) {
+  if (Number(enabled) !== 1) return '<span class="dot"></span>';
+  return '<span class="dot ' + (up ? 'up' : 'down') + '"></span>';
+}
+
+function setUnlessFocused(sel, val) {
+  const el = $(sel);
+  if (document.activeElement !== el) el.value = val;
+}
+
+function orderList() {
+  const all = (status && status.uplinks || []).map(u => u.name);
+  const order = (status && status.order || '').split(/\s+/).filter(Boolean);
+  for (const n of all) if (!order.includes(n)) order.push(n);
+  return order;
+}
+
+function render() {
+  if (!status) return;
+  $('#btnFailover').classList.toggle('active', status.policy === 'failover');
+  $('#btnBalanced').classList.toggle('active', status.policy === 'balanced');
+  $('#policyHint').textContent = status.policy === 'failover'
+    ? '当前：严格按优先级，失败自动下移，恢复自动切回'
+    : '当前：所有启用链路按权重分担，单条大流量不会叠加';
+
+  const order = orderList();
+  $('#prio').innerHTML = order.map((n, i) =>
+    '<span class="item">' + dot((status.uplinks.find(u => u.name === n) || {}).up, (status.uplinks.find(u => u.name === n) || {}).enabled) +
+    '<b>' + n + '</b>' +
+    '<button ' + (i === 0 ? 'disabled' : '') + ' onclick="move(\'' + n + '\',-1)">↑</button>' +
+    '<button ' + (i === order.length - 1 ? 'disabled' : '') + ' onclick="move(\'' + n + '\',1)">↓</button>' +
+    '</span>'
+  ).join('');
+
+  $('#uplinks').innerHTML = status.uplinks.map(u => {
+    const meta = [];
+    if (u.addr) meta.push('IP ' + u.addr);
+    if (u.gw) meta.push('网关 ' + u.gw);
+    if (u.port) meta.push('端口 ' + u.port + (u.carrier === '1' ? '（有链路）' : '（无链路）'));
+    if (u.proto) meta.push(u.proto);
+    return '<div class="uplink" data-name="' + u.name + '">' +
+      '<div class="name">' + dot(u.up, u.enabled) + '<b>' + u.name + '</b> <span class="meta">(' + u.iface + ')</span></div>' +
+      '<div class="meta">' + (meta.join(' · ') || '未获取到地址') + '</div>' +
+      '<label class="meta"><input type="checkbox" ' + (Number(u.enabled) ? 'checked' : '') + ' onchange="toggleUplink(\'' + u.name + '\',this.checked)"> 启用</label>' +
+      '<label class="meta">权重 <input type="number" min="1" max="100" value="' + u.weight + '" style="width:70px" onchange="setWeight(\'' + u.name + '\',this.value)"></label>' +
+      '</div>';
+  }).join('');
+
+  const w2 = status.uplinks.find(u => u.name === 'wan2') || {};
+  $('#w2mode').value = w2.mode || 'port';
+  $('#w2port').value = w2.port || 'lan3';
+  $('#w2proto').value = w2.proto || 'dhcp';
+  setUnlessFocused('#w2ip', w2.ipaddr || '');
+  setUnlessFocused('#w2gw', w2.gateway || '');
+  $('#usbproto').value = (status.uplinks.find(u => u.name === 'usbwan') || {}).proto || 'dhcp';
+
+  $('#check').textContent = status.check || '';
+  $('#mwan3').textContent = status.mwan3 || '';
+  $('#log').textContent = status.log || '';
+  $('#usbHint').textContent = (status.usb || []).map(x => x.device + ' [' + x.driver + ']').join('，') || '未检测到 USB 网卡';
+}
+
+async function refresh() {
+  try {
+    status = await api('status');
+    render();
+  } catch (e) {
+    $('#check').textContent = '请求失败：' + e.message + '（检查 Token）';
+  }
+}
+
+async function setPolicy(mode) { await api('policy', { mode }); refresh(); }
+async function move(name, dir) {
+  const order = orderList();
+  const i = order.indexOf(name);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  await api('order', { list: order.join(',') });
+  refresh();
+}
+async function toggleUplink(name, on) { await api('uplink', { name, enabled: on ? 1 : 0 }); refresh(); }
+async function setWeight(name, w) { await api('uplink', { name, weight: w }); refresh(); }
+async function saveWan2() {
+  await api('wan2', {
+    mode: $('#w2mode').value, port: $('#w2port').value, proto: $('#w2proto').value,
+    ipaddr: $('#w2ip').value, gateway: $('#w2gw').value,
+    username: $('#w2user').value, password: $('#w2pass').value
+  });
+  refresh();
+}
+async function saveUsb() {
+  await api('usb', { proto: $('#usbproto').value, device: $('#usbdev').value, apn: $('#usbapn').value });
+  refresh();
+}
+async function detectUsb() {
+  const d = await api('usb-detect');
+  const list = d.usb || [];
+  $('#usbHint').textContent = list.map(x => x.device + ' [' + x.driver + ']').join('，') || '未检测到 USB 网卡';
+  if (list.length && !$('#usbdev').value) $('#usbdev').value = list[0].device;
+}
+
+$('#token').addEventListener('keydown', e => { if (e.key === 'Enter') saveToken(); });
+refresh();
+setInterval(() => {
+  const a = document.activeElement;
+  if (a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName)) return;
+  refresh();
+}, 8000);
+</script>
+</body>
+</html>
