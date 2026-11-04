@@ -1,0 +1,13 @@
+#!/bin/sh
+#
+# Wait for an authorized ADB device, then attach an interactive shell.
+# Used as the command for the ttyd instance on port 7682.
+#
+while :; do
+	dev=$(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1; exit }')
+	[ -n "$dev" ] && break
+	printf '等待已授权的 ADB 设备...\r\n'
+	sleep 2
+done
+
+exec adb -s "$dev" shell

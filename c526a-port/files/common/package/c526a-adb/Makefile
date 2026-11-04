@@ -18,7 +18,7 @@ define Package/c526a-adb
   SECTION:=utils
   CATEGORY:=Utilities
   TITLE:=ADB host + SMS bridge (HiWiFi C526A)
-  DEPENDS:=@TARGET_ipq40xx +adb +curl +jshn +uhttpd
+  DEPENDS:=@TARGET_ipq40xx +adb +curl +jshn +uhttpd +ttyd
 endef
 
 define Package/c526a-adb/description
@@ -42,6 +42,7 @@ define Package/c526a-adb/install
 	$(INSTALL_BIN) ./files/usr/bin/adb-net $(1)/usr/bin/adb-net
 	$(INSTALL_BIN) ./files/usr/bin/adb-sms $(1)/usr/bin/adb-sms
 	$(INSTALL_BIN) ./files/usr/bin/adb-ctl $(1)/usr/bin/adb-ctl
+	$(INSTALL_BIN) ./files/usr/bin/adb-term $(1)/usr/bin/adb-term
 	$(INSTALL_DIR) $(1)/www/cgi-bin
 	$(INSTALL_BIN) ./files/www/cgi-bin/adb-sms $(1)/www/cgi-bin/adb-sms
 	$(INSTALL_BIN) ./files/www/cgi-bin/adb-api $(1)/www/cgi-bin/adb-api
@@ -49,6 +50,7 @@ define Package/c526a-adb/install
 	$(INSTALL_DATA) ./files/www/adb/index.html $(1)/www/adb/index.html
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) ./files/etc/uci-defaults/95-c526a-adb $(1)/etc/uci-defaults/95-c526a-adb
+	$(INSTALL_BIN) ./files/etc/uci-defaults/96-c526a-adbterm $(1)/etc/uci-defaults/96-c526a-adbterm
 endef
 
 $(eval $(call BuildPackage,c526a-adb))

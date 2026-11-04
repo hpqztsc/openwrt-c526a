@@ -50,6 +50,7 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
   <button data-tab="devices">设备</button>
   <button data-tab="sms">短信</button>
   <button data-tab="control">控制</button>
+  <button data-tab="term">终端</button>
 </nav>
 <main>
   <section id="status" class="active">
@@ -111,6 +112,16 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
       <pre id="shellOut" class="out" style="min-height:80px"></pre>
     </div>
   </section>
+
+  <section id="term">
+    <div class="card">
+      <div class="row">
+        <button class="primary" onclick="openTerm()">打开 ADB 终端</button>
+        <span class="muted">用户名 adb，密码见 /root/adb-term-password</span>
+      </div>
+      <p class="muted">在新标签页打开 ttyd 交互式终端。手机离线时会提示等待设备；连接后直接进入 adb shell。</p>
+    </div>
+  </section>
 </main>
 <script>
 const $ = s => document.querySelector(s);
@@ -142,6 +153,11 @@ function showTab(name) {
   if (name === 'status') refresh();
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+function openTerm() {
+  const h = location.hostname.includes(':') ? '[' + location.hostname + ']' : location.hostname;
+  window.open('http://' + h + ':7682/', '_blank', 'noopener');
+}
 
 async function refresh() {
   try {
