@@ -333,6 +333,8 @@ wanctl --dry-run apply
 - 多路上行同时 `peerdns` 会让 `resolv.conf.auto` 抖动，`wwan`/`usbwan`
   建议固定 DNS 或 `peerdns 0`。
 - 默认规则是 `failover`，`order` 决定优先级；`balanced` 用 `weight` 加权。
+- 每路上行默认在 `disconnected` / `ifdown` 时 flush conntrack，切换后旧连接
+  会立即重建，不会“卡”在失效线路上；不需要的话设 `flush_conntrack 0`。
 
 ## Known limitations / verify on hardware
 

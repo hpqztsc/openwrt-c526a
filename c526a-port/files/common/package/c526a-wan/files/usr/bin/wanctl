@@ -239,7 +239,10 @@ mwan3_conf() {
 		echo "	option interval '$interval'"
 		echo "	option down '$down'"
 		echo "	option up '$up'"
-		[ "$flush" = 1 ] && echo "	option flush_conntrack '1'"
+		if [ "$flush" = 1 ]; then
+			echo "	list flush_conntrack 'disconnected'"
+			echo "	list flush_conntrack 'ifdown'"
+		fi
 		for i in $ips; do
 			echo "	list track_ip '$i'"
 		done
