@@ -1,0 +1,10 @@
+#!/bin/sh
+# Chinese UI and China timezone on first boot.
+if uci -q get luci.main >/dev/null 2>&1; then
+	uci set luci.main.lang='zh_cn'
+	uci commit luci
+fi
+uci set system.@system[0].timezone='CST-8'
+uci set system.@system[0].zonename='Asia/Shanghai'
+uci commit system
+exit 0
