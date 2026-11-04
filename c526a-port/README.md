@@ -336,6 +336,29 @@ wanctl --dry-run apply
 - 每路上行默认在 `disconnected` / `ifdown` 时 flush conntrack，切换后旧连接
   会立即重建，不会“卡”在失效线路上；不需要的话设 `flush_conntrack 0`。
 
+### 按目标智能分流（mwan3 ipset）
+
+`wanctl apply` 会为每个启用的上行创建 ipset `c526a_via_<uplink>`，并生成
+mwan3 规则 `wc_set_<uplink>`：匹配该集合里的目标地址，走
+`wc_fo_<uplink>` 策略（该线路优先，其余上行按 `order` 依次回退）。
+
+```sh
+wanctl smart add 203.0.113.10 wan2   # 这个目标优先走 wan2
+wanctl smart add 10.0.0.0/8 wan      # 网段也可以
+wanctl smart show                    # 查看各集合内容
+wanctl smart del 203.0.113.10        # 从所有集合移除
+wanctl smart flush                  # 清空全部
+```
+
+集合内容变化不需要重载 mwan3，新连接立即按新标记选路；已有连接可以配合
+`conntrack -D -d <ip>` 清掉。注意规则顺序：mwan3 是按配置顺序 append 的，
+`wanctl_default` 必须放在所有 `wc_set_*` 和 `wanctl_route_*` 之后，否则
+具体规则永远命中不到——这一点已经在生成器里修正。
+
+自动探测（按域名/IP 分别从每条上行探测，自动把目标放进可用线路的集合）
+需要额外的 `wanctl-probe` 守护进程；`wanctl smart` 是它和手工操作的共同
+后端。
+
 ## Known limitations / verify on hardware
 
 1. **DSA port order.** swconfig ports 2/3/4 were LAN, 5 was WAN; the DTS maps

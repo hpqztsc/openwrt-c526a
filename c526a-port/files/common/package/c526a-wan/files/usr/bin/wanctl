@@ -284,6 +284,73 @@ mwan3_conf() {
 		echo
 	done
 
+	# enabled uplinks in priority order
+	enabled_list=""
+	for name in $(ordered_uplinks); do
+		[ "$(cget "$name.enabled")" = 1 ] || continue
+		enabled_list="$enabled_list $name"
+	done
+
+	# Per-uplink-first failover policies used by the smart destination sets:
+	# wc_fo_<uplink> puts <uplink> first, then the other enabled uplinks in
+	# the global order.  Dedicated members carry explicit metrics because the
+	# shared _f members have global metrics that would tie.
+	for via in $enabled_list; do
+		via_iface=$(cget "$via.interface")
+		[ -n "$via_iface" ] || via_iface=$via
+		pos=1
+		echo "config member 'wc_${via}_m1'"
+		echo "	option interface '$via_iface'"
+		echo "	option metric '1'"
+		echo
+		for other in $enabled_list; do
+			[ "$other" = "$via" ] && continue
+			pos=$((pos + 1))
+			other_iface=$(cget "$other.interface")
+			[ -n "$other_iface" ] || other_iface=$other
+			echo "config member 'wc_${via}_m${pos}'"
+			echo "	option interface '$other_iface'"
+			echo "	option metric '$pos'"
+			echo
+		done
+		echo "config policy 'wc_fo_$via'"
+		p=1
+		while [ "$p" -le "$pos" ]; do
+			echo "	list use_member 'wc_${via}_m${p}'"
+			p=$((p + 1))
+		done
+		echo
+	done
+
+	# Smart destination sets: the prober fills c526a_via_<uplink> with the
+	# addresses that only work through that uplink.  mwan3 matches the set
+	# as destination and uses the per-uplink-first policy.  Rules must come
+	# before the catch-all default rule (mwan3 appends rules in config order).
+	for via in $enabled_list; do
+		echo "config rule 'wc_set_$via'"
+		echo "	option ipset 'c526a_via_$via'"
+		echo "	option family 'ipv4'"
+		echo "	option proto 'all'"
+		echo "	option use_policy 'wc_fo_$via'"
+		echo
+	done
+
+	for r in $(uci -q show "$WANCTL" 2>/dev/null | sed -n "s/^$WANCTL\.\([^.=]*\)=route$/\1/p"); do
+		via=$(cget "$r.via")
+		[ -n "$via" ] || continue
+		enabled=$(cget "$via.enabled")
+		[ "$enabled" = 1 ] || continue
+		echo "config rule 'wanctl_route_$r'"
+		for k in src_ip dest_ip src_port dest_port proto family; do
+			v=$(cget "$r.$k")
+			[ -n "$v" ] && echo "	option $k '$v'"
+		done
+		echo "	option use_policy 'wanctl_o_$via'"
+		echo "	option sticky '1'"
+		[ "$(cget "$r.logging")" = 1 ] && echo "	option logging '1'"
+		echo
+	done
+
 	default_policy=$(cget globals.default_policy)
 	[ -n "$default_policy" ] || default_policy=failover
 	case "$default_policy" in
@@ -310,22 +377,6 @@ mwan3_conf() {
 	echo "	option proto 'all'"
 	echo "	option use_policy '$use_policy'"
 	echo
-
-	for r in $(uci -q show "$WANCTL" 2>/dev/null | sed -n "s/^$WANCTL\.\([^.=]*\)=route$/\1/p"); do
-		via=$(cget "$r.via")
-		[ -n "$via" ] || continue
-		enabled=$(cget "$via.enabled")
-		[ "$enabled" = 1 ] || continue
-		echo "config rule 'wanctl_route_$r'"
-		for k in src_ip dest_ip src_port dest_port proto family; do
-			v=$(cget "$r.$k")
-			[ -n "$v" ] && echo "	option $k '$v'"
-		done
-		echo "	option use_policy 'wanctl_o_$via'"
-		echo "	option sticky '1'"
-		[ "$(cget "$r.logging")" = 1 ] && echo "	option logging '1'"
-		echo
-	done
 }
 
 build_mwan3() {
@@ -335,6 +386,29 @@ build_mwan3() {
 		return 0
 	fi
 	mwan3_conf > /etc/config/mwan3.new && mv /etc/config/mwan3.new /etc/config/mwan3
+}
+
+# Smart destination sets: c526a_via_<uplink> holds addresses that only work
+# through that uplink.  The prober (or "wanctl smart add") fills them; mwan3
+# rules generated above match them as destination.
+ensure_sets() {
+	local name
+	command -v ipset >/dev/null 2>&1 || return 0
+	for name in $(uplinks); do
+		if [ "$(cget "$name.enabled")" = 1 ]; then
+			if [ "$DRY" = 1 ]; then
+				echo "ipset -exist create c526a_via_$name hash:net"
+			else
+				ipset -exist create "c526a_via_$name" hash:net 2>/dev/null || true
+			fi
+		else
+			if [ "$DRY" = 1 ]; then
+				echo "ipset flush c526a_via_$name"
+			else
+				ipset flush "c526a_via_$name" 2>/dev/null || true
+			fi
+		fi
+	done
 }
 
 apply() {
@@ -363,6 +437,7 @@ apply() {
 
 	ensure_firewall
 	build_mwan3
+	ensure_sets
 
 	u_commit network
 	u_commit firewall
@@ -390,6 +465,12 @@ status() {
 			"$name" "$iface" "${up:-?}" "${addr:--}" "${gw:--}"
 	done
 	echo
+	if command -v ipset >/dev/null 2>&1; then
+		for name in $(uplinks); do
+			n=$(ipset list "c526a_via_$name" 2>/dev/null | sed -n 's/^Number of entries: //p')
+			[ -n "$n" ] && printf 'smart    %-8s %s entries\n' "$name" "$n"
+		done
+	fi
 	mwan3 status 2>/dev/null | sed -n '1,40p'
 }
 
@@ -466,6 +547,16 @@ check() {
 		fi
 	done
 
+	if command -v ipset >/dev/null 2>&1; then
+		for name in $(uplinks); do
+			[ "$(cget "$name.enabled")" = 1 ] || continue
+			ipset list "c526a_via_$name" >/dev/null 2>&1 || {
+				echo "WARN: ipset c526a_via_$name missing (run 'wanctl apply')"
+				bad=1
+			}
+		done
+	fi
+
 	[ "$bad" = 0 ] && echo "check: OK"
 	return "$bad"
 }
@@ -488,6 +579,11 @@ usage: wanctl <command>
   route add <name> via=<uplink> [src_ip=..] [dest_ip=..] [src_port=..] [dest_port=..] [proto=..]
   route del <name>
   route list
+  smart show                show the per-uplink destination sets
+  smart add <ip|cidr> <uplink>
+                            force this destination through <uplink> first
+  smart del <ip|cidr>       remove a destination from all sets
+  smart flush [uplink]      empty one or all destination sets
   usb-detect                print USB network interfaces seen by the kernel
 
 Examples:
@@ -606,6 +702,42 @@ route)
 		;;
 	list)
 		uci -q show "$WANCTL" | grep '=route' || true
+		;;
+	*) usage; exit 1 ;;
+	esac
+	;;
+smart)
+	act=$1; shift
+	case "$act" in
+	show)
+		for name in $(uplinks); do
+			echo "== $name (c526a_via_$name)"
+			ipset list "c526a_via_$name" 2>/dev/null | sed -n '/^Members:/,$p' | tail -n +2
+		done
+		;;
+	add)
+		ip=$1; via=$2
+		[ -n "$ip" ] && [ -n "$via" ] || { usage; exit 1; }
+		[ "$(cget "$via")" = uplink ] || { echo "wanctl: unknown uplink '$via'" >&2; exit 1; }
+		ensure_sets >/dev/null 2>&1
+		ipset -exist add "c526a_via_$via" "$ip"
+		;;
+	del)
+		ip=$1
+		[ -n "$ip" ] || { usage; exit 1; }
+		for name in $(uplinks); do
+			ipset -exist del "c526a_via_$name" "$ip" 2>/dev/null || true
+		done
+		;;
+	flush)
+		via=$1
+		if [ -n "$via" ]; then
+			ipset flush "c526a_via_$via" 2>/dev/null || true
+		else
+			for name in $(uplinks); do
+				ipset flush "c526a_via_$name" 2>/dev/null || true
+			done
+		fi
 		;;
 	*) usage; exit 1 ;;
 	esac
