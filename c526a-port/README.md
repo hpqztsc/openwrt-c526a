@@ -390,6 +390,30 @@ wanctl ipv6 dump                   # JSON（网页用）
 
 注意：relay 依赖上游把 `/64` 真正路由到本机（Android 共享已验证可行）；如果上游只给 on-link 前缀且不转发，或者需要 PD，则要换用支持前缀委派的上行。
 
+### TUN / TPROXY 内核支持（24.10）
+
+`patches/2410/0002-ipq40xx-enable-tun-tproxy.patch` 在 `target/linux/ipq40xx/config-6.6`
+中打开：
+
+```text
+CONFIG_TUN=m
+CONFIG_NFT_TPROXY=m
+CONFIG_NF_TPROXY_IPV4=m
+CONFIG_NF_TPROXY_IPV6=m
+CONFIG_NFT_SOCKET=m
+CONFIG_NF_SOCKET_IPV4=m
+CONFIG_NF_SOCKET_IPV6=m
+CONFIG_INET_DIAG=m
+CONFIG_DUMMY=m
+```
+
+`config/2410.config` 同时选中对应的 kmod 包（`kmod-tun`、`kmod-nft-tproxy`、
+`kmod-nft-socket`、`kmod-nf-tproxy`、`kmod-nf-socket`、`kmod-inet-diag`、
+`kmod-dummy`）以及 `ip-full` / `yq` / `libbpf1` / `libelf1`。
+
+刷入该镜像后 `/dev/net/tun` 存在，`nft describe tproxy` 可用，Nikki 可以切换
+到 TUN/TPROXY 模式来代理 IPv6 和 UDP。
+
 ## Known limitations / verify on hardware
 
 1. **DSA port order.** swconfig ports 2/3/4 were LAN, 5 was WAN; the DTS maps
