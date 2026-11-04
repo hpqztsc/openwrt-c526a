@@ -73,8 +73,8 @@ common USB-serial chips (`ch341`, `cp210x`, `ftdi`, `pl2303`).
 `c526a-adb` (see below) on top of the in-tree `adb` package
 (`package/utils/adb`, ADB 1.0.32). All four trees already ship it, so no
 extra source is vendored. It is an older adb: no `adb pair` (Android 11+
-wireless debugging) and no `exec-out`; `adb-ctl` falls back to
-`screencap` + `adb pull`.
+wireless debugging), and its `exec-out` mixes screencap warnings into the
+PNG stream — screenshots use `screencap` to a file plus `adb pull`.
 
 If the image does not fit the stock 44 MB `ubi` partition, drop `ksmbd`,
 `wireguard` or `bash` first.

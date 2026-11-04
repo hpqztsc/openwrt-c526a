@@ -77,14 +77,11 @@ EOF
 		;;
 	shot)
 		out="${1:-/tmp/screen.png}"
-		if adb_cmd exec-out screencap -p > "$out" 2>/dev/null && [ -s "$out" ]; then
-			echo "$out"
-		else
-			adb_cmd shell screencap -p /data/local/tmp/_adb_shot.png &&
-			adb_cmd pull /data/local/tmp/_adb_shot.png "$out" >/dev/null &&
-			adb_cmd shell rm -f /data/local/tmp/_adb_shot.png &&
-			echo "$out"
-		fi
+		# adb 1.0.32's exec-out mixes screencap's display warning into the PNG.
+		adb_cmd shell screencap -p /data/local/tmp/_adb_shot.png >/dev/null 2>&1 &&
+		adb_cmd pull /data/local/tmp/_adb_shot.png "$out" >/dev/null &&
+		adb_cmd shell rm -f /data/local/tmp/_adb_shot.png &&
+		echo "$out"
 		;;
 	tap)
 		adb_cmd shell input tap "$1" "$2"
