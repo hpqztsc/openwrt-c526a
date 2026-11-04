@@ -88,10 +88,10 @@ index 29f77ab..aec7c6e 100644
  	mobipromo,cm520-79f|\
  	netgear,lbr20|\
 diff --git a/target/linux/ipq40xx/image/generic.mk b/target/linux/ipq40xx/image/generic.mk
-index 8167391..f11ec96 100644
+index 8167391..f80b93b 100644
 --- a/target/linux/ipq40xx/image/generic.mk
 +++ b/target/linux/ipq40xx/image/generic.mk
-@@ -1497,3 +1497,28 @@ define Device/zyxel_wre6606
+@@ -1497,3 +1497,30 @@ define Device/zyxel_wre6606
  endef
  # Missing DSA Setup
  #TARGET_DEVICES += zyxel_wre6606
@@ -117,6 +117,8 @@ index 8167391..f11ec96 100644
 +	$(call Device/hiwifi_c526a_common)
 +	DEVICE_VARIANT := 128M NAND
 +	DEVICE_DTS := qcom-ipq4019-c526a-128m
-+	SUPPORTED_DEVICES += hiwifi,c526a-128m
++	# the 5.4 firmware reports "hiwifi,c526a" even on the 128M layout,
++	# so accept both names for the first upgrade
++	SUPPORTED_DEVICES += hiwifi,c526a hiwifi,c526a-128m
 +endef
 +TARGET_DEVICES += hiwifi_c526a-128m
