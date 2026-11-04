@@ -282,6 +282,7 @@ wanctl set usbwan device usb0
 # 策略
 wanctl default failover      # 按 order 顺序故障切换（默认）
 wanctl default balanced      # 按 weight 加权负载均衡
+wanctl default only_wan2     # 只走某一路（禁用它时自动回落到 failover）
 wanctl set wan2 weight 2
 
 # 分流：指定目标走某一路
@@ -289,6 +290,28 @@ wanctl route add office via=wan2 dest_ip=192.168.1.0/24
 wanctl route add nas via=wan dest_ip=10.0.0.0/8
 wanctl route list
 ```
+
+### 网页控制台（推荐）
+
+浏览器打开 `http://192.168.1.29/wan/`，填入 API Token 后即可操作：
+
+- 一键切换 **故障切换 / 负载均衡**，以及每路下面的 **只走此线路**；
+- 用 ↑/↓ 调整优先级（保存即生效）；
+- 勾选启用某路上行、修改负载均衡权重；
+- 表单配置 wan2（端口/协议/静态地址/PPPoE）和 USB 上行（DHCP/QMI/MBIM）；
+- 自动刷新上行地址、mwan3 状态与最近日志。
+
+Token 从 SSH 读取：`cat /root/wan-token`（同时保存在
+`uci get wanctl.globals.api_token`）。忘记/想重置时：
+
+```sh
+uci set wanctl.globals.api_token=''
+uci commit wanctl
+rm -f /root/wan-token
+/etc/uci-defaults/90-c526a-wan    # 重新生成
+```
+
+### 后端行为
 
 `wanctl apply` 会写入 `/etc/config/network`、把接口加进 `wan` 防火墙区域、
 并整体生成 `/etc/config/mwan3`（globals/interface/member/policy/rule），
