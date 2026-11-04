@@ -17,6 +17,12 @@ if ! uci -q get ttyd.adbterm >/dev/null 2>&1; then
 	chmod 600 /root/adb-term-password
 fi
 
+# Also repair sections created by older firmware, which lack -a/--url-arg.
+if uci -q get ttyd.adbterm >/dev/null 2>&1; then
+	uci set ttyd.adbterm.url_arg='1'
+	uci commit ttyd
+fi
+
 grep -qx /root/adb-term-password /etc/sysupgrade.conf 2>/dev/null ||
 	echo /root/adb-term-password >> /etc/sysupgrade.conf
 
