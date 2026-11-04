@@ -174,7 +174,7 @@ ensure_usbwan() {
 			u_set network.usbwan6.device "$dev"
 			u_set network.usbwan6.proto dhcpv6
 			u_set network.usbwan6.reqaddress try
-			u_set network.usbwan6.reqprefix no
+			u_set network.usbwan6.reqprefix auto
 			[ "$DRY" = 1 ] || echo 2 > "/proc/sys/net/ipv6/conf/$dev/accept_ra" 2>/dev/null
 		fi
 		;;
@@ -197,6 +197,7 @@ ensure_firewall() {
 
 	zone=$(zone_wan) || return 0
 	u_set "firewall.$zone.masq" 1
+	u_set "firewall.$zone.masq6" 1
 	u_set "firewall.$zone.mtu_fix" 1
 	for name in $(ordered_uplinks); do
 		[ "$(cget "$name.enabled")" = 1 ] || continue
@@ -204,6 +205,11 @@ ensure_firewall() {
 		[ -n "$iface" ] || iface=$name
 		u_del_list "firewall.$zone.network" "$iface"
 		u_add_list "firewall.$zone.network" "$iface"
+		# companion IPv6 interface (wan6/usbwan6) belongs to the WAN zone too
+		if uci -q get "network.${iface}6" >/dev/null 2>&1; then
+			u_del_list "firewall.$zone.network" "${iface}6"
+			u_add_list "firewall.$zone.network" "${iface}6"
+		fi
 	done
 }
 
