@@ -57,13 +57,12 @@ USB storage + `ext4/vfat/exfat/ntfs3` + `block-mount`, `ksmbd-server` +
 
 **Network services**
 `dnsmasq-full`, `kmod-nft-offload` (software flow offload), `sqm-scripts`,
-`ddns-scripts`, `miniupnpd-nftables`, `nlbwmon`, `etherwake` (WoL),
-WireGuard, `ttyd` (web console), `adblock-fast`.
+`miniupnpd-nftables`, `nlbwmon`, `etherwake` (WoL), WireGuard,
+`ttyd` (web console).
 
 **Extra LuCI apps**
 `luci-app-commands`, `luci-app-wifischedule`, `luci-app-hd-idle`,
-`luci-app-adblock-fast`, plus Chinese translations for the ones that have
-them.
+plus Chinese translations for the ones that have them.
 
 **Tools / diagnostics**
 `htop`, `curl`, `wget-ssl`, `nano`, `bash`, `usbutils`, `pciutils`,
