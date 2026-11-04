@@ -1,0 +1,16 @@
+#!/bin/sh
+# Site defaults: keep the management address, avoid a second DHCP server
+# on 192.168.1.0/24, and allow SSH only with the installed keys.
+uci set network.lan.ipaddr='192.168.1.29'
+uci set network.lan.netmask='255.255.255.0'
+uci set dhcp.lan.ignore='1'
+uci set dropbear.@dropbear[0].Port='22'
+uci set dropbear.@dropbear[0].Interface='lan'
+uci set dropbear.@dropbear[0].PasswordAuth='off'
+uci set dropbear.@dropbear[0].RootPasswordAuth='off'
+uci set system.@system[0].hostname='HiWiFi-C526A'
+uci commit network
+uci commit dhcp
+uci commit dropbear
+uci commit system
+exit 0

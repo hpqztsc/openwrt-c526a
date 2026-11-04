@@ -190,6 +190,7 @@ ensure_firewall() {
 
 mwan3_conf() {
 	local name iface idx=0 ips ip reliability default_policy via r k v enabled tm
+	local rel count timeout interval down up flush
 
 	echo "config globals 'globals'"
 	echo "	option mmx_mask '0x3F00'"
@@ -207,19 +208,29 @@ mwan3_conf() {
 		for i in $ips; do ip=$((ip + 1)); done
 		reliability=$ip
 		[ "$reliability" -ge 1 ] || reliability=1
+		rel=$(cget "$name.reliability")
+		[ -n "$rel" ] || rel=$reliability
+		[ "$rel" -ge 1 ] || rel=1
 		tm=$(cget "$name.track_method")
 		[ -n "$tm" ] || tm=ping
+		count=$(cget "$name.count"); [ -n "$count" ] || count=1
+		timeout=$(cget "$name.timeout"); [ -n "$timeout" ] || timeout=2
+		interval=$(cget "$name.interval"); [ -n "$interval" ] || interval=5
+		down=$(cget "$name.down"); [ -n "$down" ] || down=2
+		up=$(cget "$name.up"); [ -n "$up" ] || up=2
+		flush=$(cget "$name.flush_conntrack"); [ -n "$flush" ] || flush=1
 
 		echo "config interface 'wanctl_$name'"
 		echo "	option enabled '1'"
 		echo "	option family 'ipv4'"
 		echo "	option track_method '$tm'"
-		echo "	option reliability '$reliability'"
-		echo "	option count '1'"
-		echo "	option timeout '2'"
-		echo "	option interval '5'"
-		echo "	option down '3'"
-		echo "	option up '3'"
+		echo "	option reliability '$rel'"
+		echo "	option count '$count'"
+		echo "	option timeout '$timeout'"
+		echo "	option interval '$interval'"
+		echo "	option down '$down'"
+		echo "	option up '$up'"
+		[ "$flush" = 1 ] && echo "	option flush_conntrack '1'"
 		for i in $ips; do
 			echo "	list track_ip '$i'"
 		done
@@ -442,6 +453,7 @@ usage: wanctl <command>
   wan2 off
   set <section> <option> <value>
   default failover|balanced
+  order <uplink ...>       failover priority, e.g. 'wan wan2 wwan usbwan'
   route add <name> via=<uplink> [src_ip=..] [dest_ip=..] [src_port=..] [dest_port=..] [proto=..]
   route del <name>
   route list
@@ -526,6 +538,12 @@ wan2)
 	;;
 default)
 	uci set "$WANCTL.globals.default_policy=$1"
+	uci commit "$WANCTL"
+	apply
+	;;
+order)
+	[ $# -gt 0 ] || { usage; exit 1; }
+	uci set "$WANCTL.globals.order=$*"
 	uci commit "$WANCTL"
 	apply
 	;;
