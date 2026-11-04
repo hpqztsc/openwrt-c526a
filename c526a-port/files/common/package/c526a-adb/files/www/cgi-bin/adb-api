@@ -2,6 +2,10 @@
 #
 # JSON API for the ADB web UI (/adb/).
 #
+# Every device action accepts a "device=<serial>" parameter.  With exactly
+# one authorized device it may be omitted; with multiple devices the caller
+# must choose one, otherwise a "multiple devices" error is returned.
+#
 . /usr/share/libubox/jshn.sh
 
 urldecode() {
@@ -18,6 +22,11 @@ get_param() {
 		esac
 	done
 	return 1
+}
+
+json_error() {
+	json_init
+	json_add_string error "$1"
 }
 
 # busybox on OpenWrt has no "timeout" applet; fall back to a small wrapper.
@@ -38,6 +47,81 @@ adb_timeout() {
 	return "$rc"
 }
 
+add_devices_array() {
+	local line serial state model product devname transport tok
+
+	json_add_array devices
+	adb devices -l 2>/dev/null | sed -n '2,$p' > "/tmp/.adbdev.$$"
+	while read -r line; do
+		[ -n "$line" ] || continue
+		set -- $line
+		serial=$1
+		state=$2
+		[ "$state" = "no" ] && state="no permissions"
+		model=""; product=""; devname=""; transport=""
+		shift 2
+		for tok in "$@"; do
+			case "$tok" in
+			model:*) model=${tok#model:} ;;
+			product:*) product=${tok#product:} ;;
+			device:*) devname=${tok#device:} ;;
+			usb:*) transport="usb" ;;
+			tcp:*) transport="tcp" ;;
+			esac
+		done
+		json_add_object
+		json_add_string serial "$serial"
+		json_add_string id "$serial"
+		json_add_string state "$state"
+		json_add_string model "$model"
+		json_add_string product "$product"
+		json_add_string device "$devname"
+		json_add_string transport "$transport"
+		json_close_object
+	done < "/tmp/.adbdev.$$"
+	rm -f "/tmp/.adbdev.$$"
+	json_close_array
+}
+
+# Resolve the target device into $DEV.  Prints a JSON error and returns 1
+# when the request is ambiguous or the device is not authorized.
+resolve_device() {
+	local req st n
+
+	req=$(get_param device)
+	adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }' > "/tmp/.adbok.$$"
+
+	if [ -n "$req" ]; then
+		if grep -Fxq "$req" "/tmp/.adbok.$$"; then
+			DEV=$req
+			rm -f "/tmp/.adbok.$$"
+			return 0
+		fi
+		st=$(adb devices 2>/dev/null | awk -v s="$req" '$1 == s { print $2; exit }')
+		rm -f "/tmp/.adbok.$$"
+		json_error "device ${req} is ${st:-not connected}"
+		return 1
+	fi
+
+	n=$(wc -l < "/tmp/.adbok.$$")
+	if [ "$n" -eq 1 ]; then
+		DEV=$(cat "/tmp/.adbok.$$")
+		rm -f "/tmp/.adbok.$$"
+		return 0
+	fi
+	rm -f "/tmp/.adbok.$$"
+	if [ "$n" -eq 0 ]; then
+		json_error "no authorized device"
+	else
+		json_error "multiple devices; select one"
+	fi
+	return 1
+}
+
+safe_serial() {
+	printf '%s' "$1" | tr ':/' '__'
+}
+
 token=$(uci -q get adb.sms.api_token)
 req="${HTTP_X_TOKEN:-}"
 [ -n "$req" ] || req=$(get_param token)
@@ -50,53 +134,47 @@ fi
 action=$(get_param action)
 [ -n "$action" ] || action=status
 
-case "$action" in
-screenshot)
-	if ! adb devices 2>/dev/null | awk 'NR>1 && $2=="device"{f=1} END{exit !f}'; then
-		printf 'Status: 503 Service Unavailable\r\nContent-Type: application/json\r\n\r\n'
-		echo '{"error":"no device"}'
+# Screenshot must resolve the device before sending image headers.
+if [ "$action" = "screenshot" ]; then
+	if ! resolve_device; then
+		printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+		json_dump
 		exit 0
 	fi
-	printf 'Content-Type: image/png\r\nCache-Control: no-store\r\n\r\n'
-	adb exec-out screencap -p 2>/dev/null && exit 0
-	adb shell screencap -p /data/local/tmp/_adb_web.png >/dev/null 2>&1
-	adb pull /data/local/tmp/_adb_web.png /tmp/_adb_web.png >/dev/null 2>&1
-	adb shell rm -f /data/local/tmp/_adb_web.png >/dev/null 2>&1
-	[ -s /tmp/_adb_web.png ] && cat /tmp/_adb_web.png
+	rm -f /tmp/_adb_web.png
+	# adb 1.0.32's exec-out lets screencap's "multiple displays" warning into
+	# the PNG stream, so always capture to a file and pull it.
+	adb -s "$DEV" shell screencap -p /data/local/tmp/_adb_web.png >/dev/null 2>&1
+	adb -s "$DEV" pull /data/local/tmp/_adb_web.png /tmp/_adb_web.png >/dev/null 2>&1
+	adb -s "$DEV" shell rm -f /data/local/tmp/_adb_web.png >/dev/null 2>&1
+	magic=""
+	[ -s /tmp/_adb_web.png ] && magic=$(head -c 8 /tmp/_adb_web.png | hexdump -v -e '1/1 "%02x"')
+	if [ "$magic" = "89504e470d0a1a0a" ]; then
+		printf 'Content-Type: image/png\r\nCache-Control: no-store\r\n\r\n'
+		cat /tmp/_adb_web.png
+	else
+		printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+		echo '{"error":"screenshot failed"}'
+	fi
+	rm -f /tmp/_adb_web.png
 	exit 0
-	;;
-esac
+fi
 
 printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
 
 case "$action" in
 status)
 	json_init
-	json_add_string server "$(pgrep -f 'adb nodaemon server' >/dev/null 2>&1 && echo running || echo stopped)"
+	json_add_string server "$(pgrep -f 'adb.*server' >/dev/null 2>&1 && echo running || echo stopped)"
 	json_add_int auth "$([ -n "$token" ] && echo 1 || echo 0)"
-	json_add_array devices
-	adb devices 2>/dev/null | sed -n '2,$p' > "/tmp/.adbweb.$$"
-	while read -r id st rest; do
-		[ -n "$id" ] || continue
-		json_add_object
-		json_add_string id "$id"
-		json_add_string state "$st"
-		json_close_object
-	done < "/tmp/.adbweb.$$"
-	rm -f "/tmp/.adbweb.$$"
-	json_close_array
+	add_devices_array
+	default=$(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }')
+	[ "$(printf '%s\n' "$default" | grep -c .)" -eq 1 ] && json_add_string default "$default"
 	json_dump
 	;;
 devices)
 	json_init
-	json_add_array devices
-	adb devices -l 2>/dev/null | sed -n '2,$p' > "/tmp/.adbweb.$$"
-	while read -r line; do
-		[ -n "$line" ] || continue
-		json_add_string "" "$line"
-	done < "/tmp/.adbweb.$$"
-	rm -f "/tmp/.adbweb.$$"
-	json_close_array
+	add_devices_array
 	json_dump
 	;;
 connect)
@@ -116,25 +194,32 @@ disconnect)
 	json_dump
 	;;
 sms)
-	if [ -s /tmp/adb-sms.json ]; then
-		cat /tmp/adb-sms.json
+	resolve_device || { json_dump; exit 0; }
+	safe=$(safe_serial "$DEV")
+	mkdir -p /tmp/adb-sms
+	[ -s "/tmp/adb-sms/$safe.json" ] || /usr/bin/adb-sms --once "$DEV" >/dev/null 2>&1
+	if [ -s "/tmp/adb-sms/$safe.json" ]; then
+		cat "/tmp/adb-sms/$safe.json"
 	else
-		echo '{"messages":[]}'
+		json_init; json_add_string device "$DEV"; json_add_array messages; json_close_array; json_dump
 	fi
 	;;
 poll)
-	/usr/bin/adb-sms --once >/dev/null 2>&1
-	if [ -s /tmp/adb-sms.json ]; then
-		cat /tmp/adb-sms.json
+	resolve_device || { json_dump; exit 0; }
+	/usr/bin/adb-sms --once "$DEV" >/dev/null 2>&1
+	safe=$(safe_serial "$DEV")
+	if [ -s "/tmp/adb-sms/$safe.json" ]; then
+		cat "/tmp/adb-sms/$safe.json"
 	else
-		echo '{"messages":[]}'
+		json_init; json_add_string device "$DEV"; json_add_array messages; json_close_array; json_dump
 	fi
 	;;
 shell)
 	cmd=$(get_param cmd)
+	resolve_device || { json_dump; exit 0; }
 	json_init
 	if [ -n "$cmd" ]; then
-		out=$(adb_timeout 20 adb shell "$cmd" 2>&1)
+		out=$(adb_timeout 20 adb -s "$DEV" shell "$cmd" 2>&1)
 		json_add_string output "$out"
 	else
 		json_add_string error "cmd required"
@@ -143,19 +228,20 @@ shell)
 	;;
 input)
 	t=$(get_param type)
+	resolve_device || { json_dump; exit 0; }
 	case "$t" in
 	tap)
-		adb shell input tap "$(get_param x)" "$(get_param y)" >/dev/null 2>&1
+		adb -s "$DEV" shell input tap "$(get_param x)" "$(get_param y)" >/dev/null 2>&1
 		;;
 	swipe)
-		adb shell input swipe "$(get_param x)" "$(get_param y)" \
+		adb -s "$DEV" shell input swipe "$(get_param x)" "$(get_param y)" \
 			"$(get_param x2)" "$(get_param y2)" >/dev/null 2>&1
 		;;
 	text)
-		adb shell input text "$(get_param text)" >/dev/null 2>&1
+		adb -s "$DEV" shell input text "$(get_param text)" >/dev/null 2>&1
 		;;
 	key)
-		adb shell input keyevent "$(get_param key)" >/dev/null 2>&1
+		adb -s "$DEV" shell input keyevent "$(get_param key)" >/dev/null 2>&1
 		;;
 	esac
 	json_init
@@ -163,8 +249,7 @@ input)
 	json_dump
 	;;
 *)
-	json_init
-	json_add_string error "unknown action"
+	json_error "unknown action"
 	json_dump
 	;;
 esac

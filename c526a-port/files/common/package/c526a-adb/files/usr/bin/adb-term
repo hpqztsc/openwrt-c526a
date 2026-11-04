@@ -1,13 +1,47 @@
 #!/bin/sh
 #
-# Wait for an authorized ADB device, then attach an interactive shell.
-# Used as the command for the ttyd instance on port 7682.
+# Attach an interactive shell to the selected ADB device.
+# Usage: adb-term [serial]   (ttyd passes ?arg=<serial> as $1)
 #
-while :; do
-	dev=$(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1; exit }')
-	[ -n "$dev" ] && break
-	printf '等待已授权的 ADB 设备...\r\n'
-	sleep 2
-done
+serial="$1"
+case "$serial" in
+arg=*) serial=${serial#arg=} ;;
+esac
+# ttyd passes ?arg= values still percent-encoded (e.g. 10.0.0.5%3A5555).
+case "$serial" in
+*%*) serial=$(printf '%b' "$(printf '%s' "$serial" | sed 's/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')") ;;
+esac
 
-exec adb -s "$dev" shell
+if [ -z "$serial" ]; then
+	set -- $(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }')
+	if [ "$#" -eq 1 ]; then
+		serial=$1
+	elif [ "$#" -gt 1 ]; then
+		printf '多个 ADB 设备，请从网页选择后重新打开终端：\r\n'
+		printf '  %s\r\n' "$@"
+		sleep 3
+		exit 1
+	else
+		printf '等待已授权的 ADB 设备...\r\n'
+		while :; do
+			set -- $(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }')
+			[ "$#" -gt 0 ] && break
+			sleep 2
+		done
+		if [ "$#" -gt 1 ]; then
+			printf '多个 ADB 设备，请从网页选择后重新打开终端：\r\n'
+			printf '  %s\r\n' "$@"
+			sleep 3
+			exit 1
+		fi
+		serial=$1
+	fi
+fi
+
+if ! adb devices 2>/dev/null | awk -v s="$serial" 'NR > 1 && $1 == s && $2 == "device" { found=1 } END { exit !found }'; then
+	printf '设备 %s 未连接或未授权。\r\n' "$serial"
+	sleep 3
+	exit 1
+fi
+
+exec adb -s "$serial" shell

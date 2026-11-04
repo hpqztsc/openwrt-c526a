@@ -6,7 +6,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=c526a-adb
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -22,9 +22,10 @@ define Package/c526a-adb
 endef
 
 define Package/c526a-adb/description
-  Runs the ADB server on the router, polls new SMS from a rooted Android
-  device over ADB, optionally forwards them to a webhook or Telegram, and
-  exposes the inbox as JSON at /cgi-bin/adb-sms.
+  Runs the ADB server on the router, drives one or more USB/network Android
+  devices (device-aware JSON API, web console, interactive terminal), polls
+  new SMS from rooted phones per device, and optionally forwards them to a
+  webhook or Telegram.
 endef
 
 define Package/c526a-adb/conffiles

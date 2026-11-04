@@ -13,6 +13,8 @@ return view.extend({
 			E('div', { 'class': 'cbi-map-descr' }, [
 				_('ADB 控制台是独立页面，包含设备、短信、截图/输入控制和交互式终端。'),
 				E('br'),
+				_('多设备时在页面顶部选择目标设备，选择会记忆在当前浏览器。'),
+				E('br'),
 				_('API Token 在 /root/adb-token；终端密码在 /root/adb-term-password。')
 			]),
 			E('div', { 'class': 'cbi-section' }, [

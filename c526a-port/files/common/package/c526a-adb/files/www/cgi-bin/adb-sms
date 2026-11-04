@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# GET /cgi-bin/adb-sms[?token=...] -> the last N SMS as JSON
+# GET /cgi-bin/adb-sms[?token=...][&device=<serial>] -> the last N SMS as JSON
 #
 echo "Content-Type: application/json"
 echo
@@ -18,8 +18,38 @@ if [ -n "$token" ]; then
 	esac
 fi
 
-if [ -s /tmp/adb-sms.json ]; then
-	cat /tmp/adb-sms.json
-else
+urldecode() {
+	printf '%b' "$(printf '%s' "$1" | sed 's/+/ /g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')"
+}
+
+device=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | sed -n 's/^device=//p' | head -n 1)
+[ -n "$device" ] && device=$(urldecode "$device")
+[ -n "$device" ] || device=$(uci -q get adb.sms.serial)
+
+if [ -n "$device" ]; then
+	safe=$(printf '%s' "$device" | tr ':/' '__')
+	if [ -s "/tmp/adb-sms/$safe.json" ]; then
+		cat "/tmp/adb-sms/$safe.json"
+	else
+		printf '{"device":"%s","messages":[]}\n' "$device"
+	fi
+	exit 0
+fi
+
+# No device selected: keep the old single-device behaviour, but refuse to
+# guess when more than one device has an inbox.
+n=0
+one=""
+for f in /tmp/adb-sms/*.json; do
+	[ -f "$f" ] || continue
+	n=$((n + 1))
+	one=$f
+done
+
+if [ "$n" -eq 1 ]; then
+	cat "$one"
+elif [ "$n" -eq 0 ]; then
 	echo '{"messages":[]}'
+else
+	echo '{"error":"multiple devices; specify device"}'
 fi

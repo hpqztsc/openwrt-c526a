@@ -9,6 +9,7 @@ if ! uci -q get ttyd.adbterm >/dev/null 2>&1; then
 	uci set ttyd.adbterm.interface='@lan'
 	uci set ttyd.adbterm.command='/usr/bin/adb-term'
 	uci set ttyd.adbterm.max_clients='2'
+	uci set ttyd.adbterm.url_arg='1'
 	pass=$(head -c 32 /dev/urandom | md5sum | cut -c1-12)
 	uci set ttyd.adbterm.credential="adb:$pass"
 	uci commit ttyd

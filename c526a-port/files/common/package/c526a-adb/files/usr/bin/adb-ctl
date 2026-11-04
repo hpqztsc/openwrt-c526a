@@ -2,6 +2,25 @@
 #
 # Small adb helper for the router console.
 #
+SERIAL=${ADB_SERIAL:-}
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-s|--serial)
+		SERIAL=$2
+		shift 2
+		;;
+	*) break ;;
+	esac
+done
+
+adb_cmd() {
+	if [ -n "$SERIAL" ]; then
+		adb -s "$SERIAL" "$@"
+	else
+		adb "$@"
+	fi
+}
+
 cmd="$1"
 shift 2>/dev/null
 
@@ -16,7 +35,8 @@ case "$cmd" in
 		exec adb disconnect "$@"
 		;;
 	tcpip)
-		exec adb tcpip "${1:-5555}"
+		adb_cmd tcpip "${1:-5555}"
+		exit $?
 		;;
 	pair)
 		echo "adb 1.0.32 has no 'adb pair' (Android 11+ wireless debugging)."
@@ -25,7 +45,7 @@ case "$cmd" in
 		;;
 	enable-tcp)
 		port="${1:-5555}"
-		adb shell su <<EOF
+		adb_cmd shell su <<EOF
 setprop service.adb.tcp.port $port
 setprop persist.adb.tcp.port $port
 stop adbd
@@ -43,52 +63,55 @@ EOF
 		fi
 		;;
 	shell)
-		exec adb shell "$@"
+		adb_cmd shell "$@"
+		exit $?
 		;;
 	root)
-		exec adb root
+		adb_cmd root
+		exit $?
 		;;
 	sms)
-		adb shell su <<'EOF'
+		adb_cmd shell su <<'EOF'
 content query --uri content://sms/inbox --projection _id,address,date,body --sort "date DESC"
 EOF
 		;;
 	shot)
 		out="${1:-/tmp/screen.png}"
-		if adb exec-out screencap -p > "$out" 2>/dev/null && [ -s "$out" ]; then
+		if adb_cmd exec-out screencap -p > "$out" 2>/dev/null && [ -s "$out" ]; then
 			echo "$out"
 		else
-			adb shell screencap -p /data/local/tmp/_adb_shot.png &&
-			adb pull /data/local/tmp/_adb_shot.png "$out" >/dev/null &&
-			adb shell rm -f /data/local/tmp/_adb_shot.png &&
+			adb_cmd shell screencap -p /data/local/tmp/_adb_shot.png &&
+			adb_cmd pull /data/local/tmp/_adb_shot.png "$out" >/dev/null &&
+			adb_cmd shell rm -f /data/local/tmp/_adb_shot.png &&
 			echo "$out"
 		fi
 		;;
 	tap)
-		adb shell input tap "$1" "$2"
+		adb_cmd shell input tap "$1" "$2"
 		;;
 	swipe)
-		adb shell input swipe "$1" "$2" "$3" "$4"
+		adb_cmd shell input swipe "$1" "$2" "$3" "$4"
 		;;
 	text)
-		adb shell input text "$1"
+		adb_cmd shell input text "$1"
 		;;
 	key)
-		adb shell input keyevent "$1"
+		adb_cmd shell input keyevent "$1"
 		;;
 	ui)
-		if ! adb exec-out uiautomator dump /dev/tty 2>/dev/null; then
-			adb shell uiautomator dump /data/local/tmp/_adb_ui.xml >/dev/null &&
-			adb shell cat /data/local/tmp/_adb_ui.xml &&
-			adb shell rm -f /data/local/tmp/_adb_ui.xml
+		if ! adb_cmd exec-out uiautomator dump /dev/tty 2>/dev/null; then
+			adb_cmd shell uiautomator dump /data/local/tmp/_adb_ui.xml >/dev/null &&
+			adb_cmd shell cat /data/local/tmp/_adb_ui.xml &&
+			adb_cmd shell rm -f /data/local/tmp/_adb_ui.xml
 		fi
 		;;
 	install)
-		adb install -r "$1"
+		adb_cmd install -r "$1"
 		;;
 	*)
 		cat <<EOF
-usage: adb-ctl <command>
+usage: adb-ctl [-s <serial>] <command>
+  -s <serial>                 target a device (or set ADB_SERIAL)
   devices                     list connected devices
   connect <ip:port>           network adb (alias: net)
   disconnect [ip:port]

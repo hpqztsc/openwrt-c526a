@@ -1,30 +1,37 @@
 #!/bin/sh
 #
-# Poll new SMS from a rooted Android device over ADB and forward them.
-# State (last seen _id) is kept in /etc/adb-sms.state, the inbox is written
-# to /tmp/adb-sms.json for /cgi-bin/adb-sms.
+# Poll new SMS from one or more rooted Android devices over ADB.
+#
+# Per-device state lives in /etc/adb-sms/<safe>.state and the inbox in
+# /tmp/adb-sms/<safe>.json.  The JSON includes the device serial so the web
+# UI can show the messages of the selected device.
 #
 . /lib/functions.sh
 . /usr/share/libubox/jshn.sh
 
-STATE=/etc/adb-sms.state
-JSONL=/tmp/adb-sms.jsonl
-STORE=/tmp/adb-sms.json
+STATE_DIR=/etc/adb-sms
+TMP_DIR=/tmp/adb-sms
+mkdir -p "$STATE_DIR" "$TMP_DIR"
 
 log() { logger -t adb-sms -- "$*"; }
 
+safe_serial() {
+	printf '%s' "$1" | tr ':/' '__'
+}
+
 store_build() {
-	local max="$1"
+	local serial="$1" safe="$2" max="$3"
+	local jsonl="$TMP_DIR/$safe.jsonl" store="$TMP_DIR/$safe.json"
 
 	{
-		printf '{"messages":['
-		[ -s "$JSONL" ] && tail -n "$max" "$JSONL" | paste -sd, -
+		printf '{"device":"%s","messages":[' "$serial"
+		[ -s "$jsonl" ] && tail -n "$max" "$jsonl" | paste -sd, -
 		printf ']}\n'
-	} > "$STORE.tmp" && mv "$STORE.tmp" "$STORE"
+	} > "$store.tmp" && mv "$store.tmp" "$store"
 }
 
 send() {
-	local json="$1" text="$2"
+	local json="$1" text="$2" device="$3"
 
 	if [ -n "$webhook" ]; then
 		curl -sS -m 10 -H 'Content-Type: application/json' \
@@ -33,12 +40,108 @@ send() {
 	if [ -n "$tg_token" ] && [ -n "$tg_chat" ]; then
 		curl -sS -m 10 "https://api.telegram.org/bot$tg_token/sendMessage" \
 			--data-urlencode "chat_id=$tg_chat" \
-			--data-urlencode "text=$text" >/dev/null 2>&1
+			--data-urlencode "text=[$device] $text" >/dev/null 2>&1
 	fi
 }
 
-[ -f "$STATE" ] || echo 0 > "$STATE"
-[ -f "$JSONL" ] || : > "$JSONL"
+poll_device() {
+	local serial="$1" safe state jsonl store last rows id addr date body msg
+	local max_store="$2" webhook="$3" tg_token="$4" tg_chat="$5"
+
+	safe=$(safe_serial "$serial")
+	state="$STATE_DIR/$safe.state"
+	jsonl="$TMP_DIR/$safe.jsonl"
+	store="$TMP_DIR/$safe.json"
+
+	# migrate the old single-device state/inbox on first run
+	[ -f "$state" ] || {
+		if [ -f /etc/adb-sms.state ]; then
+			cp /etc/adb-sms.state "$state"
+		else
+			echo 0 > "$state"
+		fi
+	}
+	[ -s "$store" ] || [ ! -s /tmp/adb-sms.json ] || cp /tmp/adb-sms.json "$store" 2>/dev/null
+	[ -f "$jsonl" ] || : > "$jsonl"
+
+	last=$(cat "$state" 2>/dev/null)
+	case "$last" in ''|*[!0-9]*) last=0 ;; esac
+
+	cat > /tmp/adb-sms.query <<EOF
+content query --uri content://sms/inbox --where "_id>$last" --projection _id,address,date,body --sort "date ASC"
+EOF
+	rows=$(/usr/bin/adb -s "$serial" shell su < /tmp/adb-sms.query 2>/dev/null)
+	rm -f /tmp/adb-sms.query
+
+	printf '%s\n' "$rows" | awk -F', ' '
+		/^Row: / {
+			line=$0
+			sub(/^Row: [0-9]+ /, "", line)
+			n=split(line, a, ", ")
+			if (n < 4) next
+			id=a[1]; sub(/^_id=/, "", id)
+			addr=a[2]; sub(/^address=/, "", addr)
+			date=a[3]; sub(/^date=/, "", date)
+			body=a[4]; sub(/^body=/, "", body)
+			for (i=5; i<=n; i++) body=body ", " a[i]
+			gsub(/\r/, "", body)
+			printf "%s\t%s\t%s\t%s\n", id, addr, date, body
+		}' | while IFS="$(printf '\t')" read -r id addr date body; do
+		[ -n "$id" ] || continue
+
+		json_init
+		json_add_string device "$serial"
+		json_add_int id "$id"
+		json_add_string address "$addr"
+		json_add_int date "$date"
+		json_add_string body "$body"
+		msg=$(json_dump)
+
+		printf '%s\n' "$msg" >> "$jsonl"
+		echo "$id" > "$state"
+		send "$msg" "SMS $addr: $body" "$serial"
+		log "new sms device=$serial id=$id from $addr"
+	done
+
+	if [ "$(wc -l < "$jsonl")" -gt "$max_store" ]; then
+		tail -n "$max_store" "$jsonl" > "$jsonl.tmp" && mv "$jsonl.tmp" "$jsonl"
+	fi
+	store_build "$serial" "$safe" "$max_store"
+}
+
+adb_serials() {
+	/usr/bin/adb devices 2>/dev/null |
+		awk 'NR > 1 && $2 == "device" { print $1 }'
+}
+
+config_load adb
+config_get interval sms interval 30
+config_get max_store sms max_store 50
+config_get webhook sms webhook ""
+config_get tg_token sms telegram_token ""
+config_get tg_chat sms telegram_chat ""
+config_get configured_serial sms serial ""
+
+once=0
+only=""
+case "$1" in
+--once)
+	once=1
+	only=$2
+	;;
+esac
+
+if [ -n "$only" ]; then
+	poll_device "$only" "$max_store" "$webhook" "$tg_token" "$tg_chat"
+elif [ -n "$configured_serial" ]; then
+	poll_device "$configured_serial" "$max_store" "$webhook" "$tg_token" "$tg_chat"
+else
+	for serial in $(adb_serials); do
+		poll_device "$serial" "$max_store" "$webhook" "$tg_token" "$tg_chat"
+	done
+fi
+
+[ "$once" = 1 ] && exit 0
 
 while :; do
 	config_load adb
@@ -47,55 +150,14 @@ while :; do
 	config_get webhook sms webhook ""
 	config_get tg_token sms telegram_token ""
 	config_get tg_chat sms telegram_chat ""
-	config_get serial sms serial ""
+	config_get configured_serial sms serial ""
 
-	[ -n "$serial" ] && export ANDROID_SERIAL="$serial"
-
-	last=$(cat "$STATE" 2>/dev/null)
-	case "$last" in ''|*[!0-9]*) last=0 ;; esac
-
-	if /usr/bin/adb devices 2>/dev/null | awk 'NR>1 && $2=="device"{f=1} END{exit !f}'; then
-		cat > /tmp/adb-sms.query <<EOF
-content query --uri content://sms/inbox --where "_id>$last" --projection _id,address,date,body --sort "date ASC"
-EOF
-		rows=$(/usr/bin/adb shell su < /tmp/adb-sms.query 2>/dev/null)
-		rm -f /tmp/adb-sms.query
-
-		printf '%s\n' "$rows" | awk -F', ' '
-			/^Row: / {
-				line=$0
-				sub(/^Row: [0-9]+ /, "", line)
-				n=split(line, a, ", ")
-				if (n < 4) next
-				id=a[1]; sub(/^_id=/, "", id)
-				addr=a[2]; sub(/^address=/, "", addr)
-				date=a[3]; sub(/^date=/, "", date)
-				body=a[4]; sub(/^body=/, "", body)
-				for (i=5; i<=n; i++) body=body ", " a[i]
-				gsub(/\r/, "", body)
-				printf "%s\t%s\t%s\t%s\n", id, addr, date, body
-			}' | while IFS="$(printf '\t')" read -r id addr date body; do
-			[ -n "$id" ] || continue
-
-			json_init
-			json_add_int id "$id"
-			json_add_string address "$addr"
-			json_add_int date "$date"
-			json_add_string body "$body"
-			msg=$(json_dump)
-
-			printf '%s\n' "$msg" >> "$JSONL"
-			echo "$id" > "$STATE"
-			send "$msg" "SMS $addr: $body"
-			log "new sms id=$id from $addr"
+	if [ -n "$configured_serial" ]; then
+		poll_device "$configured_serial" "$max_store" "$webhook" "$tg_token" "$tg_chat"
+	else
+		for serial in $(adb_serials); do
+			poll_device "$serial" "$max_store" "$webhook" "$tg_token" "$tg_chat"
 		done
-
-		if [ "$(wc -l < "$JSONL")" -gt "$max_store" ]; then
-			tail -n "$max_store" "$JSONL" > "$JSONL.tmp" && mv "$JSONL.tmp" "$JSONL"
-		fi
 	fi
-
-	store_build "$max_store"
-	[ "$1" = "--once" ] && exit 0
 	sleep "$interval"
 done

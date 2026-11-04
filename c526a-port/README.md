@@ -113,13 +113,18 @@ connected to the USB port. `package/c526a-adb` adds:
   `adb.main.listen_lan` (default `127.0.0.1:5037`)
 - `/etc/init.d/adbnet` + `/usr/bin/adb-net` — keeps the network devices listed
   in `adb.main.connect` connected (reconnects after Wi-Fi drops / reboots)
-- `/etc/init.d/adbsms` + `/usr/bin/adb-sms` — polls new inbox rows from a
-  **rooted** phone (`adb shell su` + `content query`), keeps the last
-  `max_store` messages in `/tmp/adb-sms.json`, and can POST them to a webhook
-  or a Telegram bot
-- `/www/cgi-bin/adb-sms[?token=...]` — JSON endpoint
-- `/usr/bin/adb-ctl` — `devices / connect / tcpip / enable-tcp / shell / sms /
-  shot / tap / swipe / text / key / ui / install`
+- `/etc/init.d/adbsms` + `/usr/bin/adb-sms` — polls new inbox rows from one or
+  more **rooted** phones (`adb shell su` + `content query`). State is kept per
+  device in `/etc/adb-sms/<serial>.state`, the last `max_store` messages of
+  each device in `/tmp/adb-sms/<serial>.json`, and new messages can be POSTed
+  to a webhook or a Telegram bot (prefixed with the device serial)
+- `/www/cgi-bin/adb-api` — JSON API for the web UI (`devices`, `sms`, `poll`,
+  `shell`, `input`, `screenshot`, `connect`, `disconnect`)
+- `/www/cgi-bin/adb-sms` — legacy SMS endpoint; accepts `&device=<serial>`
+- `/www/adb/` — device-aware web console (device picker, SMS, screenshot,
+  input, shell); a ttyd instance on port 7682 opens an interactive shell
+- `/usr/bin/adb-ctl [-s <serial>]` — `devices / connect / tcpip / enable-tcp /
+  shell / sms / shot / tap / swipe / text / key / ui / install`
 
 Config (`/etc/config/adb`):
 
@@ -155,14 +160,30 @@ USB is not required. Three ways to get a phone reachable over TCP:
    `adbnet` service reconnects every `reconnect_interval` seconds.
 
 Android 11+ "Wireless debugging" needs `adb pair`, which adb 1.0.32 does not
-implement — use option 1 or 2 above. Multiple phones are fine; set
-`adb.sms.serial` to the one used for SMS.
+implement — use option 1 or 2 above.
+
+### Multiple devices
+
+USB and network transports can be connected at the same time. Device actions
+(`adb-api`, the web console and `adb-term`) resolve the target like this:
+
+- `device=<serial>` selects it explicitly; if it is not authorised, an error
+  names its state (`offline`, `unauthorized`, …)
+- with exactly one authorised device the parameter may be omitted
+- with several authorised devices it **must** be given, otherwise the API
+  returns `multiple devices; select one`
+
+The web console remembers the selected serial in `localStorage` for that
+browser and drops a remembered selection as soon as the device disappears.
+SMS state and inbox files are per device, so switching the selection only
+changes which inbox is displayed. Use `adb-ctl -s <serial> ...` on the command
+line, and `adb.sms.serial` only when a single fixed phone should be polled.
 
 First use:
 
 ```sh
 adb-ctl devices          # USB or network, whichever is connected
-adb-ctl sms              # requires root on the phone (Magisk su)
+adb-ctl -s <serial> sms  # requires root on the phone (Magisk su)
 adb-ctl shot /tmp/a.png
 adb-ctl tap 540 1200
 ```

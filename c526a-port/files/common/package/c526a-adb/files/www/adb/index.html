@@ -5,14 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ADB 控制台 - HiWiFi C526A</title>
 <style>
-:root { color-scheme: light dark; --bg:#f4f6f8; --card:#fff; --fg:#1f2328; --muted:#6b7280; --line:#d8dee4; --accent:#2563eb; }
-@media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --card:#171a21; --fg:#e6e6e6; --muted:#9aa4b2; --line:#2a2f3a; --accent:#60a5fa; } }
+:root { color-scheme: light dark; --bg:#f4f6f8; --card:#fff; --fg:#1f2328; --muted:#6b7280; --line:#d8dee4; --accent:#2563eb; --ok:#16a34a; --bad:#dc2626; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --card:#171a21; --fg:#e6e6e6; --muted:#9aa4b2; --line:#2a2f3a; --accent:#60a5fa; --ok:#4ade80; --bad:#f87171; } }
 * { box-sizing: border-box; }
 body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
 header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--card); border-bottom:1px solid var(--line); }
 h1 { font-size:17px; margin:0; }
+.right { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.device { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:12px; }
+.device select { max-width:230px; }
 .token { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:12px; }
-.token input { width:150px; padding:5px 8px; }
+.token input { width:150px; }
 nav { display:flex; gap:6px; padding:10px 18px; background:var(--card); border-bottom:1px solid var(--line); overflow:auto; }
 nav button { border:1px solid var(--line); background:transparent; color:var(--fg); padding:6px 14px; border-radius:999px; cursor:pointer; white-space:nowrap; }
 nav button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
@@ -25,6 +28,7 @@ input, button, select { font:inherit; }
 input, select { padding:6px 9px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); }
 button { padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); cursor:pointer; }
 button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+button:disabled { opacity:.45; cursor:default; }
 pre, .out { background:rgba(127,127,127,.12); padding:10px; border-radius:8px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
 table { width:100%; border-collapse:collapse; }
 th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
@@ -34,15 +38,26 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
 .msg .meta { color:var(--muted); font-size:12px; margin-bottom:4px; }
 #shot { max-width:100%; border-radius:8px; border:1px solid var(--line); }
 .muted { color:var(--muted); }
+.warn { color:var(--bad); }
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--muted); margin-right:6px; }
+.dot.up { background:var(--ok); }
+.dot.down { background:var(--bad); }
 </style>
 </head>
 <body>
 <header>
   <h1>ADB 控制台 · HiWiFi C526A</h1>
-  <div class="token">
-    <span>API Token</span>
-    <input id="token" type="password" placeholder="见 /root/adb-token">
-    <button onclick="saveToken()">保存</button>
+  <div class="right">
+    <div class="device">
+      <span>设备</span>
+      <select id="devSel" onchange="selectDevice(this.value)"></select>
+      <span id="devMeta"></span>
+    </div>
+    <div class="token">
+      <span>API Token</span>
+      <input id="token" type="password" placeholder="见 /root/adb-token">
+      <button onclick="saveToken()">保存</button>
+    </div>
   </div>
 </header>
 <nav>
@@ -66,7 +81,6 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
         <button class="primary" onclick="loadDevices()">刷新设备</button>
         <input id="host" placeholder="192.168.1.50:5555">
         <button onclick="connectHost()">网络连接</button>
-        <button onclick="api('devices').then(renderDevices)">设备详情</button>
       </div>
       <div id="devicesBox" class="muted">未加载</div>
     </div>
@@ -75,8 +89,8 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
   <section id="sms">
     <div class="card">
       <div class="row">
-        <button class="primary" onclick="loadSms()">刷新短信</button>
-        <button onclick="pollSms()">立即轮询</button>
+        <button class="primary" data-dev onclick="loadSms()">刷新短信</button>
+        <button data-dev onclick="pollSms()">立即轮询</button>
         <span id="smsCount" class="muted"></span>
       </div>
       <div id="smsBox" class="muted">未加载</div>
@@ -85,29 +99,29 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
 
   <section id="control">
     <div class="card">
-      <div class="row"><button class="primary" onclick="shot()">截屏</button><span class="muted">截图会显示在下方</span></div>
+      <div class="row"><button class="primary" data-dev onclick="shot()">截屏</button><span class="muted">截图会显示在下方</span></div>
       <img id="shot" alt="" style="display:none">
     </div>
     <div class="card">
       <div class="row">
-        <input id="tx" type="number" placeholder="X" style="width:90px">
-        <input id="ty" type="number" placeholder="Y" style="width:90px">
-        <button onclick="tapXY()">点击</button>
-        <input id="tx2" type="number" placeholder="X2" style="width:90px">
-        <input id="ty2" type="number" placeholder="Y2" style="width:90px">
-        <button onclick="swipeXY()">滑动</button>
+        <input id="tx" data-dev type="number" placeholder="X" style="width:90px">
+        <input id="ty" data-dev type="number" placeholder="Y" style="width:90px">
+        <button data-dev onclick="tapXY()">点击</button>
+        <input id="tx2" data-dev type="number" placeholder="X2" style="width:90px">
+        <input id="ty2" data-dev type="number" placeholder="Y2" style="width:90px">
+        <button data-dev onclick="swipeXY()">滑动</button>
       </div>
       <div class="row">
-        <input id="text" placeholder="要输入的文本" style="flex:1;min-width:180px">
-        <button onclick="sendText()">输入文本</button>
-        <input id="key" placeholder="键值 3=Home 4=Back" style="width:160px">
-        <button onclick="sendKey()">按键</button>
+        <input id="text" data-dev placeholder="要输入的文本" style="flex:1;min-width:180px">
+        <button data-dev onclick="sendText()">输入文本</button>
+        <input id="key" data-dev placeholder="键值 3=Home 4=Back" style="width:160px">
+        <button data-dev onclick="sendKey()">按键</button>
       </div>
     </div>
     <div class="card">
       <div class="row">
-        <input id="cmd" placeholder="adb shell 命令，例如 ls /sdcard" style="flex:1;min-width:200px">
-        <button class="primary" onclick="runShell()">执行</button>
+        <input id="cmd" data-dev placeholder="adb shell 命令，例如 ls /sdcard" style="flex:1;min-width:200px">
+        <button class="primary" data-dev onclick="runShell()">执行</button>
       </div>
       <pre id="shellOut" class="out" style="min-height:80px"></pre>
     </div>
@@ -116,47 +130,151 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
   <section id="term">
     <div class="card">
       <div class="row">
-        <button class="primary" onclick="openTerm()">打开 ADB 终端</button>
-        <span class="muted">用户名 adb，密码见 /root/adb-term-password</span>
+        <button class="primary" data-dev onclick="openTerm()">打开 ADB 终端</button>
+        <span id="termDevice" class="muted"></span>
       </div>
-      <p class="muted">在新标签页打开 ttyd 交互式终端。手机离线时会提示等待设备；连接后直接进入 adb shell。</p>
+      <p class="muted">在新标签页打开 ttyd 交互式终端，登录用户名 adb，密码见 /root/adb-term-password。</p>
     </div>
   </section>
 </main>
 <script>
 const $ = s => document.querySelector(s);
 let token = localStorage.getItem('adbToken') || '';
+let devices = [];
+let selected = localStorage.getItem('adbDevice') || '';
 $('#token').value = token;
 
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function authorized(d) { return d && d.state === 'device'; }
+function currentDevice() { return devices.find(d => d.serial === selected) || null; }
+function deviceLabel(d) {
+  const name = d.model || d.product || d.device || d.serial;
+  return name + ' · ' + d.serial;
+}
+function stateText(d) {
+  if (!d) return '未选择设备';
+  if (d.state === 'device') return '在线';
+  if (d.state === 'unauthorized') return '未授权';
+  if (d.state === 'offline') return '离线';
+  return d.state || '未知';
+}
 function saveToken() {
   token = $('#token').value.trim();
   localStorage.setItem('adbToken', token);
-  refresh();
+  loadDevices().then(refresh);
 }
 
 async function api(action, params = {}, raw = false) {
-  const q = new URLSearchParams(Object.assign({ action, token }, params));
+  const p = Object.assign({ action, token }, params);
+  if (selected && ['screenshot','shell','input','sms','poll'].includes(action)) p.device = selected;
+  const q = new URLSearchParams(p);
   const r = await fetch('/cgi-bin/adb-api?' + q.toString(), { cache: 'no-store' });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return raw ? r.blob() : r.json();
 }
 
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function updateDeviceHeader() {
+  const sel = $('#devSel');
+  const list = devices.filter(authorized).sort((a, b) => String(a.serial).localeCompare(String(b.serial)));
+  const opts = [];
+  if (!list.length) opts.push('<option value="">无在线设备</option>');
+  else if (list.length > 1) opts.push('<option value="">请选择设备</option>');
+  for (const d of list) {
+    opts.push('<option value="' + esc(d.serial) + '">' + esc(deviceLabel(d)) +
+      '（' + esc(stateText(d)) + '）</option>');
+  }
+  if (document.activeElement !== sel) sel.innerHTML = opts.join('');
+  if (selected && list.some(d => d.serial === selected)) sel.value = selected;
+  else if (!selected) sel.value = '';
+  const d = currentDevice();
+  if (!d) {
+    $('#devMeta').innerHTML = '<span class="warn">未选择设备</span>';
+  } else {
+    const cls = authorized(d) ? 'up' : 'down';
+    $('#devMeta').innerHTML = '<span class="dot ' + cls + '"></span>' +
+      esc(stateText(d)) + (d.transport ? ' · transport ' + esc(d.transport) : '');
+  }
+  document.querySelectorAll('[data-dev]').forEach(el => { el.disabled = !authorized(d); });
+  $('#termDevice').textContent = d ? deviceLabel(d) : '请先选择设备';
 }
 
-function showTab(name) {
-  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === name));
-  if (name === 'devices') loadDevices();
-  if (name === 'sms') loadSms();
-  if (name === 'status') refresh();
+function selectDevice(serial) {
+  selected = serial || '';
+  if (selected) localStorage.setItem('adbDevice', selected);
+  else localStorage.removeItem('adbDevice');
+  updateDeviceHeader();
+  const active = document.querySelector('section.active');
+  if (active && active.id === 'sms') loadSms();
+  if (active && active.id === 'status') refresh();
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
-function openTerm() {
-  const h = location.hostname.includes(':') ? '[' + location.hostname + ']' : location.hostname;
-  window.open('http://' + h + ':7682/', '_blank', 'noopener');
+async function loadDevices() {
+  try {
+    const d = await api('devices');
+    devices = d.devices || [];
+    const auth = devices.filter(authorized);
+    const online = serial => devices.some(x => x.serial === serial && authorized(x));
+    // Keep a selection only while that device is actually usable.
+    if (selected && !online(selected)) selected = '';
+    if (!selected) {
+      const stored = localStorage.getItem('adbDevice') || '';
+      if (stored && online(stored)) selected = stored;
+    }
+    if (!selected && auth.length === 1) selected = auth[0].serial;
+    if (selected) localStorage.setItem('adbDevice', selected);
+    else localStorage.removeItem('adbDevice');
+    updateDeviceHeader();
+    renderDevices();
+    const active = document.querySelector('section.active');
+    if (active && active.id === 'status') refresh();
+    return devices;
+  } catch (e) {
+    $('#devicesBox').textContent = '请求失败：' + e.message + '（检查 Token）';
+    return [];
+  }
+}
+
+function renderDevices() {
+  const box = $('#devicesBox');
+  if (!devices.length) {
+    box.innerHTML = '<span class="muted">没有设备。USB 请先在手机上允许调试；网络设备用上方“网络连接”。</span>';
+    return;
+  }
+  box.innerHTML = '<table><tr><th>设备</th><th>型号</th><th>状态</th><th>传输</th><th>操作</th></tr>' +
+    devices.map(d => {
+      const isNet = String(d.serial).includes(':');
+      const canUse = authorized(d);
+      return '<tr><td>' + esc(d.serial) + '</td><td>' + esc(d.model || d.product || '-') +
+        '</td><td>' + esc(stateText(d)) + '</td><td>' + esc(d.transport || (isNet ? 'tcp' : 'usb')) +
+        '</td><td>' +
+        (canUse ? '<button data-serial="' + esc(d.serial) + '" onclick="selectDevice(this.dataset.serial)">使用</button> ' : '<span class="muted">不可用</span> ') +
+        (isNet ? '<button data-serial="' + esc(d.serial) + '" onclick="disconnectDevice(this.dataset.serial)">断开</button>' : '') +
+        '</td></tr>';
+    }).join('') + '</table>';
+}
+
+async function connectHost() {
+  const host = $('#host').value.trim();
+  if (!host) return;
+  try {
+    const d = await api('connect', { host });
+    const out = d.output || d.error || '完成';
+    alert(out);
+    const m = out.match(/connected to ([^ ]+)/i);
+    await loadDevices();
+    if (m && devices.some(x => x.serial === m[1])) selectDevice(m[1]);
+  } catch (e) { alert('连接失败：' + e.message); }
+}
+
+async function disconnectDevice(serial) {
+  try {
+    const d = await api('disconnect', { host: serial });
+    alert(d.output || d.error || '完成');
+    if (selected === serial) selectDevice('');
+    await loadDevices();
+  } catch (e) { alert('断开失败：' + e.message); }
 }
 
 async function refresh() {
@@ -164,49 +282,45 @@ async function refresh() {
     const d = await api('status');
     const n = (d.devices || []).length;
     $('#statusLine').textContent = '服务：' + (d.server === 'running' ? '运行中' : '已停止') +
-      '，已连接设备：' + n + (d.auth ? '，Token 已启用' : '，未设置 Token');
-    $('#statusBox').innerHTML = (d.devices || []).length
-      ? '<table><tr><th>设备</th><th>状态</th></tr>' +
-        d.devices.map(x => '<tr><td>' + esc(x.id) + '</td><td>' + esc(x.state) + '</td></tr>').join('') + '</table>'
-      : '<span class="muted">没有设备。USB 请先在手机上允许调试；网络设备用“设备”页连接。</span>';
+      '，设备：' + n + (d.auth ? '，Token 已启用' : '，未设置 Token');
+    const cur = currentDevice();
+    let html = '';
+    if (cur) {
+      html += '<div class="row"><span class="dot ' + (authorized(cur) ? 'up' : 'down') + '"></span>' +
+        '<b>' + esc(deviceLabel(cur)) + '</b><span class="muted">' + esc(stateText(cur)) + '</span></div>';
+    } else if (devices.filter(authorized).length) {
+      html += '<p class="warn">有多台在线设备，请在顶部选择要操作的目标设备。</p>';
+    } else {
+      html += '<p class="warn">没有在线设备。USB 连接请在手机上允许调试；网络设备请在“设备”页连接。</p>';
+    }
+    $('#statusBox').innerHTML = html;
   } catch (e) {
     $('#statusLine').textContent = '请求失败：' + e.message + '（检查 Token）';
   }
 }
 
-async function loadDevices() {
-  try {
-    const d = await api('devices');
-    const list = d.devices || [];
-    $('#devicesBox').innerHTML = list.length
-      ? '<table><tr><th>设备</th></tr>' + list.map(x => '<tr><td>' + esc(x) + '</td></tr>').join('') + '</table>'
-      : '<span class="muted">没有设备</span>';
-  } catch (e) { $('#devicesBox').textContent = '请求失败：' + e.message; }
-}
-
-async function connectHost() {
-  const host = $('#host').value.trim();
-  if (!host) return;
-  const d = await api('connect', { host });
-  alert(d.output || d.error || '完成');
-  loadDevices();
-}
-
 async function loadSms() {
+  const d = currentDevice();
+  if (!authorized(d)) { $('#smsBox').textContent = '请先选择在线设备'; $('#smsCount').textContent = ''; return; }
   try {
-    const d = await api('sms');
-    renderSms(d);
+    const r = await api('sms');
+    renderSms(r);
   } catch (e) { $('#smsBox').textContent = '请求失败：' + e.message; }
 }
 
 async function pollSms() {
-  const d = await api('poll');
-  renderSms(d);
+  const d = currentDevice();
+  if (!authorized(d)) { $('#smsBox').textContent = '请先选择在线设备'; return; }
+  try {
+    const r = await api('poll');
+    renderSms(r);
+  } catch (e) { $('#smsBox').textContent = '请求失败：' + e.message; }
 }
 
 function renderSms(d) {
+  if (d.error) { $('#smsBox').textContent = d.error; return; }
   const msgs = (d.messages || []).slice().reverse();
-  $('#smsCount').textContent = '共 ' + msgs.length + ' 条（最近 ' + msgs.length + ' 条）';
+  $('#smsCount').textContent = '设备 ' + (d.device || selected) + '，共 ' + msgs.length + ' 条';
   $('#smsBox').innerHTML = msgs.length
     ? msgs.map(m => {
         const t = m.date ? new Date(Number(m.date)).toLocaleString('zh-CN') : '';
@@ -216,8 +330,13 @@ function renderSms(d) {
 }
 
 async function shot() {
+  if (!authorized(currentDevice())) { alert('请先选择在线设备'); return; }
   try {
     const b = await api('screenshot', {}, true);
+    if (b.type === 'application/json') {
+      alert('截屏失败：' + (JSON.parse(await b.text()).error || '未知错误'));
+      return;
+    }
     const img = $('#shot');
     if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
     const u = URL.createObjectURL(b);
@@ -225,21 +344,14 @@ async function shot() {
   } catch (e) { alert('截屏失败：' + e.message); }
 }
 
-async function tapXY() {
-  await api('input', { type: 'tap', x: $('#tx').value, y: $('#ty').value });
-}
-async function swipeXY() {
-  await api('input', { type: 'swipe', x: $('#tx').value, y: $('#ty').value, x2: $('#tx2').value, y2: $('#ty2').value });
-}
-async function sendText() {
-  await api('input', { type: 'text', text: $('#text').value });
-}
-async function sendKey() {
-  await api('input', { type: 'key', key: $('#key').value });
-}
+async function tapXY() { await api('input', { type: 'tap', x: $('#tx').value, y: $('#ty').value }); }
+async function swipeXY() { await api('input', { type: 'swipe', x: $('#tx').value, y: $('#ty').value, x2: $('#tx2').value, y2: $('#ty2').value }); }
+async function sendText() { await api('input', { type: 'text', text: $('#text').value }); }
+async function sendKey() { await api('input', { type: 'key', key: $('#key').value }); }
 async function runShell() {
   const cmd = $('#cmd').value.trim();
   if (!cmd) return;
+  if (!authorized(currentDevice())) { $('#shellOut').textContent = '请先选择在线设备'; return; }
   $('#shellOut').textContent = '执行中…';
   try {
     const d = await api('shell', { cmd });
@@ -247,8 +359,30 @@ async function runShell() {
   } catch (e) { $('#shellOut').textContent = '失败：' + e.message; }
 }
 
-showTab('status');
-refresh();
+function openTerm() {
+  const d = currentDevice();
+  if (!authorized(d)) { alert('请先选择在线设备'); return; }
+  let h = location.hostname;
+  if (h.includes(':')) h = '[' + h + ']';
+  const url = 'http://' + h + ':7682/?arg=' + encodeURIComponent(d.serial);
+  window.open(url, '_blank', 'noopener');
+}
+
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === name));
+  if (name === 'devices') loadDevices();
+  if (name === 'sms') loadSms();
+  if (name === 'status') refresh();
+  if (name === 'control' || name === 'term') updateDeviceHeader();
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+loadDevices();
+setInterval(() => {
+  if (document.hidden) return;
+  loadDevices();
+}, 10000);
 </script>
 </body>
 </html>
