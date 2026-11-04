@@ -199,7 +199,7 @@ ensure_firewall() {
 
 mwan3_conf() {
 	local name iface idx=0 ips ip reliability default_policy via r k v enabled tm
-	local rel count timeout interval down up flush
+	local rel count timeout interval down up flush use_policy dn
 
 	echo "config globals 'globals'"
 	echo "	option mmx_mask '0x3F00'"
@@ -283,11 +283,29 @@ mwan3_conf() {
 
 	default_policy=$(cget globals.default_policy)
 	[ -n "$default_policy" ] || default_policy=failover
+	case "$default_policy" in
+	only_*)
+		# pinning a single uplink: fall back to failover if it is disabled
+		dn=${default_policy#only_}
+		if [ "$(cget "$dn.enabled")" = 1 ]; then
+			use_policy="wanctl_o_$dn"
+		else
+			default_policy=failover
+			use_policy=wanctl_failover
+		fi
+		;;
+	balanced|failover)
+		use_policy="wanctl_$default_policy"
+		;;
+	*)
+		use_policy=wanctl_failover
+		;;
+	esac
 	echo "config rule 'wanctl_default'"
 	echo "	option dest_ip '0.0.0.0/0'"
 	echo "	option family 'ipv4'"
 	echo "	option proto 'all'"
-	echo "	option use_policy 'wanctl_$default_policy'"
+	echo "	option use_policy '$use_policy'"
 	echo
 
 	for r in $(uci -q show "$WANCTL" 2>/dev/null | sed -n "s/^$WANCTL\.\([^.=]*\)=route$/\1/p"); do
@@ -461,7 +479,8 @@ usage: wanctl <command>
   wan2 lan
   wan2 off
   set <section> <option> <value>
-  default failover|balanced
+  default failover|balanced|only_<uplink>
+                            default policy; only_<uplink> pins one uplink
   order <uplink ...>       failover priority, e.g. 'wan wan2 wwan usbwan'
   route add <name> via=<uplink> [src_ip=..] [dest_ip=..] [src_port=..] [dest_port=..] [proto=..]
   route del <name>
@@ -546,7 +565,16 @@ wan2)
 	esac
 	;;
 default)
-	uci set "$WANCTL.globals.default_policy=$1"
+	p=$1
+	case "$p" in
+	failover|balanced) ;;
+	only_*)
+		n=${p#only_}
+		[ "$(cget "$n")" = uplink ] || { echo "wanctl: unknown uplink '$n'" >&2; exit 1; }
+		;;
+	*) usage; exit 1 ;;
+	esac
+	uci set "$WANCTL.globals.default_policy=$p"
 	uci commit "$WANCTL"
 	apply
 	;;

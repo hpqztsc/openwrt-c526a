@@ -119,16 +119,28 @@ policy)
 	mode=$(get_param mode)
 	case "$mode" in
 	failover|balanced) run_wanctl default "$mode" ;;
+	only_*)
+		name=${mode#only_}
+		if [ "$(uci -q get "wanctl.$name")" = uplink ]; then
+			run_wanctl default "$mode"
+		else
+			json_init; json_add_string error "unknown uplink"; json_dump
+		fi
+		;;
 	*) json_init; json_add_string error "bad mode"; json_dump ;;
 	esac
 	;;
 uplink)
 	name=$(get_param name)
 	[ -n "$name" ] || { json_init; json_add_string error "name required"; json_dump; exit 0; }
+	[ "$(uci -q get "wanctl.$name")" = uplink ] || { json_init; json_add_string error "unknown uplink"; json_dump; exit 0; }
 	enabled=$(get_param enabled)
 	weight=$(get_param weight)
 	[ -n "$enabled" ] && uci set "wanctl.$name.enabled=$enabled"
-	[ -n "$weight" ] && uci set "wanctl.$name.weight=$weight"
+	case "$weight" in
+	''|*[!0-9]*) ;;
+	*) [ "$weight" -ge 1 ] && [ "$weight" -le 100 ] && uci set "wanctl.$name.weight=$weight" ;;
+	esac
 	uci commit wanctl
 	run_wanctl apply
 	;;

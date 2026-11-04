@@ -170,7 +170,9 @@ function render() {
   $('#btnBalanced').classList.toggle('active', status.policy === 'balanced');
   $('#policyHint').textContent = status.policy === 'failover'
     ? '当前：严格按优先级，失败自动下移，恢复自动切回'
-    : '当前：所有启用链路按权重分担，单条大流量不会叠加';
+    : status.policy === 'balanced'
+    ? '当前：所有启用链路按权重分担，单条大流量不会叠加'
+    : '当前：只走 ' + String(status.policy).replace(/^only_/, '') + '，该线路失效时会断网（需手动切回）';
 
   const order = orderList();
   $('#prio').innerHTML = order.map((n, i) =>
@@ -192,6 +194,7 @@ function render() {
       '<div class="meta">' + (meta.join(' · ') || '未获取到地址') + '</div>' +
       '<label class="meta"><input type="checkbox" ' + (Number(u.enabled) ? 'checked' : '') + ' onchange="toggleUplink(\'' + u.name + '\',this.checked)"> 启用</label>' +
       '<label class="meta">权重 <input type="number" min="1" max="100" value="' + u.weight + '" style="width:70px" onchange="setWeight(\'' + u.name + '\',this.value)"></label>' +
+      '<button class="' + (status.policy === 'only_' + u.name ? 'active' : '') + '" onclick="pin(\'' + u.name + '\')">只走此线路</button>' +
       '</div>';
   }).join('');
 
@@ -219,6 +222,7 @@ async function refresh() {
 }
 
 async function setPolicy(mode) { await api('policy', { mode }); refresh(); }
+async function pin(name) { await api('policy', { mode: 'only_' + name }); refresh(); }
 async function move(name, dir) {
   const order = orderList();
   const i = order.indexOf(name);
