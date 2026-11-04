@@ -1,0 +1,10 @@
+{
+	"admin/services/c526a-adb": {
+		"title": "ADB 控制台",
+		"order": 55,
+		"action": {
+			"type": "view",
+			"path": "c526a-adb/overview"
+		}
+	}
+}

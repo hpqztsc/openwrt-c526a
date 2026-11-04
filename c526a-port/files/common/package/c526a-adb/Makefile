@@ -48,6 +48,10 @@ define Package/c526a-adb/install
 	$(INSTALL_BIN) ./files/www/cgi-bin/adb-api $(1)/www/cgi-bin/adb-api
 	$(INSTALL_DIR) $(1)/www/adb
 	$(INSTALL_DATA) ./files/www/adb/index.html $(1)/www/adb/index.html
+	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/c526a-adb
+	$(INSTALL_DATA) ./files/www/luci-static/resources/view/c526a-adb/overview.js $(1)/www/luci-static/resources/view/c526a-adb/overview.js
+	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
+	$(INSTALL_DATA) ./files/usr/share/luci/menu.d/luci-app-c526a-adb.json $(1)/usr/share/luci/menu.d/luci-app-c526a-adb.json
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) ./files/etc/uci-defaults/95-c526a-adb $(1)/etc/uci-defaults/95-c526a-adb
 	$(INSTALL_BIN) ./files/etc/uci-defaults/96-c526a-adbterm $(1)/etc/uci-defaults/96-c526a-adbterm
