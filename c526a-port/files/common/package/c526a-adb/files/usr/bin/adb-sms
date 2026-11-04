@@ -25,7 +25,7 @@ store_build() {
 
 	{
 		printf '{"device":"%s","messages":[' "$serial"
-		[ -s "$jsonl" ] && tail -n "$max" "$jsonl" | paste -sd, -
+		[ -s "$jsonl" ] && tail -n "$max" "$jsonl" | awk 'NR > 1 { printf "," } { printf "%s", $0 }'
 		printf ']}\n'
 	} > "$store.tmp" && mv "$store.tmp" "$store"
 }
@@ -45,7 +45,7 @@ send() {
 }
 
 poll_device() {
-	local serial="$1" safe state jsonl store last rows id addr date body msg
+	local serial="$1" safe state jsonl store last rows id addr date body msg q
 	local max_store="$2" webhook="$3" tg_token="$4" tg_chat="$5"
 
 	safe=$(safe_serial "$serial")
@@ -67,11 +67,17 @@ poll_device() {
 	last=$(cat "$state" 2>/dev/null)
 	case "$last" in ''|*[!0-9]*) last=0 ;; esac
 
-	cat > /tmp/adb-sms.query <<EOF
-content query --uri content://sms/inbox --where "_id>$last" --projection _id,address,date,body --sort "date ASC"
-EOF
-	rows=$(/usr/bin/adb -s "$serial" shell su < /tmp/adb-sms.query 2>/dev/null)
-	rm -f /tmp/adb-sms.query
+	# Pass the query as one shell argument; adb 1.0.32 keeps a login shell
+	# alive when the command arrives on stdin, so "< query" would hang.
+	q="content query --uri content://sms/inbox --where \"_id>$last\" --projection _id,address,date,body --sort \"date ASC\""
+	# The shell UID can read the SMS provider on most ROMs (verified on
+	# HyperOS/Android 16); only fall back to su when the provider denies it.
+	rows=$(/usr/bin/adb -s "$serial" shell "$q" 2>&1)
+	case "$rows" in
+	*"Error while accessing provider"*|*"Permission Denial"*|*"SecurityException"*)
+		rows=$(/usr/bin/adb -s "$serial" shell "su -c '$q'" 2>/dev/null)
+		;;
+	esac
 
 	printf '%s\n' "$rows" | awk -F', ' '
 		/^Row: / {

@@ -114,10 +114,12 @@ connected to the USB port. `package/c526a-adb` adds:
 - `/etc/init.d/adbnet` + `/usr/bin/adb-net` — keeps the network devices listed
   in `adb.main.connect` connected (reconnects after Wi-Fi drops / reboots)
 - `/etc/init.d/adbsms` + `/usr/bin/adb-sms` — polls new inbox rows from one or
-  more **rooted** phones (`adb shell su` + `content query`). State is kept per
-  device in `/etc/adb-sms/<serial>.state`, the last `max_store` messages of
-  each device in `/tmp/adb-sms/<serial>.json`, and new messages can be POSTed
-  to a webhook or a Telegram bot (prefixed with the device serial)
+  more phones. It queries as the ADB `shell` UID first (works on most ROMs,
+  e.g. HyperOS/Android 16) and only falls back to `adb shell su` when the SMS
+  provider denies it. State is kept per device in
+  `/etc/adb-sms/<serial>.state`, the last `max_store` messages of each device
+  in `/tmp/adb-sms/<serial>.json`, and new messages can be POSTed to a
+  webhook or a Telegram bot (prefixed with the device serial)
 - `/www/cgi-bin/adb-api` — JSON API for the web UI (`devices`, `sms`, `poll`,
   `shell`, `input`, `screenshot`, `connect`, `disconnect`)
 - `/www/cgi-bin/adb-sms` — legacy SMS endpoint; accepts `&device=<serial>`
@@ -183,7 +185,7 @@ First use:
 
 ```sh
 adb-ctl devices          # USB or network, whichever is connected
-adb-ctl -s <serial> sms  # requires root on the phone (Magisk su)
+adb-ctl -s <serial> sms  # shell UID is enough on most ROMs; su is a fallback
 adb-ctl shot /tmp/a.png
 adb-ctl tap 540 1200
 ```

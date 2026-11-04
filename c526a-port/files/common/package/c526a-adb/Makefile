@@ -24,8 +24,8 @@ endef
 define Package/c526a-adb/description
   Runs the ADB server on the router, drives one or more USB/network Android
   devices (device-aware JSON API, web console, interactive terminal), polls
-  new SMS from rooted phones per device, and optionally forwards them to a
-  webhook or Telegram.
+  new SMS per device (shell UID first, su as fallback), and optionally
+  forwards them to a webhook or Telegram.
 endef
 
 define Package/c526a-adb/conffiles

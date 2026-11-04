@@ -71,9 +71,14 @@ EOF
 		exit $?
 		;;
 	sms)
-		adb_cmd shell su <<'EOF'
-content query --uri content://sms/inbox --projection _id,address,date,body --sort "date DESC"
-EOF
+		query='content query --uri content://sms/inbox --projection _id,address,date,body --sort "date DESC"'
+		out=$(adb_cmd shell "$query" 2>&1)
+		case "$out" in
+		*"Error while accessing provider"*|*"Permission Denial"*|*"SecurityException"*)
+			out=$(adb_cmd shell "su -c '$query'" 2>/dev/null)
+			;;
+		esac
+		printf '%s\n' "$out"
 		;;
 	shot)
 		out="${1:-/tmp/screen.png}"
@@ -118,7 +123,7 @@ usage: adb-ctl [-s <serial>] <command>
   token [new]                 show or set the web UI API token
   shell <cmd>                 run a shell command on the device
   root                        restart adbd as root (userdebug/rooted)
-  sms                         dump the SMS inbox (root required)
+  sms                         dump the SMS inbox (root only as a fallback)
   shot [file]                 screenshot (default /tmp/screen.png)
   tap <x> <y>
   swipe <x1> <y1> <x2> <y2>
