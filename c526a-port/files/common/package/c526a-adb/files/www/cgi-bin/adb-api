@@ -20,6 +20,24 @@ get_param() {
 	return 1
 }
 
+# busybox on OpenWrt has no "timeout" applet; fall back to a small wrapper.
+adb_timeout() {
+	local secs="$1"; shift
+	local p w rc
+	if command -v timeout >/dev/null 2>&1; then
+		timeout "$secs" "$@"
+		return
+	fi
+	"$@" &
+	p=$!
+	( sleep "$secs"; kill "$p" 2>/dev/null ) >/dev/null 2>&1 &
+	w=$!
+	wait "$p"
+	rc=$?
+	kill "$w" 2>/dev/null
+	return "$rc"
+}
+
 token=$(uci -q get adb.sms.api_token)
 req="${HTTP_X_TOKEN:-}"
 [ -n "$req" ] || req=$(get_param token)
@@ -116,7 +134,7 @@ shell)
 	cmd=$(get_param cmd)
 	json_init
 	if [ -n "$cmd" ]; then
-		out=$(timeout 20 adb shell "$cmd" 2>&1)
+		out=$(adb_timeout 20 adb shell "$cmd" 2>&1)
 		json_add_string output "$out"
 	else
 		json_add_string error "cmd required"

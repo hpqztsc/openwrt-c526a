@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# The phone's USB tethering advertises IPv6, but Linux sets accept_ra=0 on
+# interfaces with forwarding enabled.  Re-enable it when the tether link
+# comes up so odhcp6c/dhcpv6 can obtain a global address and default route.
+#
+[ "$ACTION" = "ifup" ] || exit 0
+
+case "$INTERFACE" in
+usbwan|usbwan6) ;;
+*) exit 0 ;;
+esac
+
+dev=$(uci -q get network.usbwan.device)
+[ -n "$dev" ] || exit 0
+[ -e "/proc/sys/net/ipv6/conf/$dev/accept_ra" ] || exit 0
+echo 2 > "/proc/sys/net/ipv6/conf/$dev/accept_ra" 2>/dev/null
+
+exit 0

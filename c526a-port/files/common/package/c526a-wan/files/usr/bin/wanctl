@@ -167,6 +167,16 @@ ensure_usbwan() {
 	dhcp)
 		[ -n "$dev" ] || dev=$(usb_detect | awk 'NR==1 {print $1}')
 		[ -n "$dev" ] && u_set network.usbwan.device "$dev"
+		# The kernel disables accept_ra on forwarding interfaces, so the
+		# phone's router advertisements are ignored unless we re-enable it.
+		if [ -n "$dev" ] && [ -e "/proc/sys/net/ipv6/conf/$dev" ]; then
+			u_set network.usbwan6 interface
+			u_set network.usbwan6.device "$dev"
+			u_set network.usbwan6.proto dhcpv6
+			u_set network.usbwan6.reqaddress try
+			u_set network.usbwan6.reqprefix no
+			[ "$DRY" = 1 ] || echo 2 > "/proc/sys/net/ipv6/conf/$dev/accept_ra" 2>/dev/null
+		fi
 		;;
 	qmi|mbim)
 		u_set network.usbwan.device "${dev:-/dev/cdc-wdm0}"
@@ -433,7 +443,11 @@ apply() {
 		u_del network.wan2
 	fi
 	[ "$(cget wwan.enabled)" = 1 ] && ensure_wwan
-	[ "$(cget usbwan.enabled)" = 1 ] && ensure_usbwan
+	if [ "$(cget usbwan.enabled)" = 1 ]; then
+		ensure_usbwan
+	else
+		u_del network.usbwan6
+	fi
 
 	ensure_firewall
 	build_mwan3

@@ -43,6 +43,8 @@ define Package/c526a-wan/install
 	$(INSTALL_BIN) ./files/usr/bin/wanctl $(1)/usr/bin/wanctl
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) ./files/etc/uci-defaults/90-c526a-wan $(1)/etc/uci-defaults/90-c526a-wan
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
+	$(INSTALL_BIN) ./files/etc/hotplug.d/iface/30-c526a-usbwan6 $(1)/etc/hotplug.d/iface/30-c526a-usbwan6
 endef
 
 $(eval $(call BuildPackage,c526a-wan))
