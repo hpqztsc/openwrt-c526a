@@ -1,0 +1,19 @@
+diff --git a/target/linux/ipq40xx/config-6.12 b/target/linux/ipq40xx/config-6.12
+index aca3af0..b713212 100644
+--- a/target/linux/ipq40xx/config-6.12
++++ b/target/linux/ipq40xx/config-6.12
+@@ -536,3 +536,14 @@ CONFIG_ZLIB_INFLATE=y
+ CONFIG_ZSTD_COMMON=y
+ CONFIG_ZSTD_COMPRESS=y
+ CONFIG_ZSTD_DECOMPRESS=y
++
++# C526A: transparent proxy (mihomo TUN/TPROXY) support
++CONFIG_TUN=m
++CONFIG_NFT_TPROXY=m
++CONFIG_NF_TPROXY_IPV4=m
++CONFIG_NF_TPROXY_IPV6=m
++CONFIG_NFT_SOCKET=m
++CONFIG_NF_SOCKET_IPV4=m
++CONFIG_NF_SOCKET_IPV6=m
++CONFIG_INET_DIAG=m
++CONFIG_DUMMY=m

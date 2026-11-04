@@ -2,11 +2,12 @@
 #
 # Apply HiWiFi C526A board support on top of a clean OpenWrt tree.
 #
-# Usage: ./apply.sh <main|2410> [path-to-openwrt]
+# Usage: ./apply.sh <main|2410|2512> [path-to-openwrt]
 #
 #   main  - openwrt/openwrt main, immortalwrt/immortalwrt, coolsnowwolf/lede
 #           (all three use kernel 6.18 and target/linux/ipq40xx/dts/)
 #   2410  - openwrt/openwrt openwrt-24.10 (kernel 6.6, files-6.6/arch/.../dts)
+#   2512  - openwrt/openwrt openwrt-25.12 (kernel 6.12, files-6.12/arch/.../dts)
 #
 set -eu
 
@@ -15,9 +16,9 @@ SOURCE=${1:-main}
 OWRT_DIR=${2:-openwrt}
 
 case "$SOURCE" in
-main|2410) ;;
+main|2410|2512) ;;
 *)
-	echo "error: unknown source '$SOURCE' (use main or 2410)" >&2
+	echo "error: unknown source '$SOURCE' (use main, 2410 or 2512)" >&2
 	exit 1
 	;;
 esac

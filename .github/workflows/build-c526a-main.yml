@@ -33,6 +33,11 @@ jobs:
             branch: openwrt-24.10
             port: 2410
             config: 2410
+          - name: openwrt-25.12
+            repo: https://github.com/openwrt/openwrt
+            branch: openwrt-25.12
+            port: 2512
+            config: 2512
           - name: immortalwrt
             repo: https://github.com/immortalwrt/immortalwrt
             branch: master
