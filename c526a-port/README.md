@@ -359,6 +359,15 @@ wanctl smart flush                  # 清空全部
 需要额外的 `wanctl-probe` 守护进程；`wanctl smart` 是它和手工操作的共同
 后端。
 
+### lan3 作为第二 WAN（当前选择）
+
+- `lan3` 固定给 `wan2`，不再属于 `br-lan`；`br-lan` 只保留 `lan1 lan2`
+- 接**不同网段/不同运营商**的上行（DHCP、静态或 PPPoE 都支持）
+- 不要接回与 `lan1` 同一台交换机/同一网段：两个口在同一广播域且 STP 关闭，会形成二层环路
+- 也不要把 `lan3` 配成 `192.168.1.0/24` 的第二个地址，会和 `br-lan` 产生 ARP/路由歧义
+- 上线后自动加入 mwan3，优先级由 `order` 控制（默认 `wan wan2 wwan usbwan`）
+- 页面 `/wan/` 的“第二 WAN”卡片可以直接改端口/协议/静态地址/PPPoE 账号
+
 ## Known limitations / verify on hardware
 
 1. **DSA port order.** swconfig ports 2/3/4 were LAN, 5 was WAN; the DTS maps
