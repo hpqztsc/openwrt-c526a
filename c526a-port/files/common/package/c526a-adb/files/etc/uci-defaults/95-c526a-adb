@@ -4,7 +4,7 @@
 #
 [ -f /etc/sysupgrade.conf ] || touch /etc/sysupgrade.conf
 
-for p in /root/.android /etc/adb-sms.state; do
+for p in /root/.android /etc/adb-sms.state /root/adb-token; do
 	grep -qx "$p" /etc/sysupgrade.conf 2>/dev/null || echo "$p" >> /etc/sysupgrade.conf
 done
 
@@ -12,12 +12,15 @@ for s in adb adbnet adbsms; do
 	[ -x "/etc/init.d/$s" ] && "/etc/init.d/$s" enable
 done
 
-if [ -z "$(uci -q get adb.sms.api_token)" ]; then
+tok=$(uci -q get adb.sms.api_token)
+if [ -z "$tok" ]; then
 	tok=$(head -c 32 /dev/urandom | md5sum | cut -c1-16)
 	uci set adb.sms.api_token="$tok"
 	uci commit adb
+fi
+[ -s /root/adb-token ] || {
 	echo "$tok" > /root/adb-token
 	chmod 600 /root/adb-token
-fi
+}
 
 exit 0

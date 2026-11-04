@@ -6,13 +6,19 @@
 [ -x /etc/init.d/mwan3 ] && /etc/init.d/mwan3 enable
 [ -x /usr/bin/wanctl ] && /usr/bin/wanctl apply >/dev/null 2>&1
 
+# keep the web UI token across sysupgrade
+touch /etc/sysupgrade.conf
+grep -qx /root/wan-token /etc/sysupgrade.conf 2>/dev/null || echo /root/wan-token >> /etc/sysupgrade.conf
 
-if [ -z "$(uci -q get wanctl.globals.api_token)" ]; then
+tok=$(uci -q get wanctl.globals.api_token)
+if [ -z "$tok" ]; then
 	tok=$(head -c 32 /dev/urandom | md5sum | cut -c1-16)
 	uci set wanctl.globals.api_token="$tok"
 	uci commit wanctl
+fi
+[ -s /root/wan-token ] || {
 	echo "$tok" > /root/wan-token
 	chmod 600 /root/wan-token
-fi
+}
 
 exit 0
