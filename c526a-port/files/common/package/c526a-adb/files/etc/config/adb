@@ -10,7 +10,7 @@ config adb 'main'
 	option reconnect '1'
 	option reconnect_interval '30'
 
-config sms 'main'
+config sms 'sms'
 	option enabled '1'
 	option interval '30'
 	option max_store '50'

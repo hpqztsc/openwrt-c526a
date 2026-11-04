@@ -96,5 +96,6 @@ EOF
 	fi
 
 	store_build "$max_store"
+	[ "$1" = "--once" ] && exit 0
 	sleep "$interval"
 done

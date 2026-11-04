@@ -170,7 +170,35 @@ adb-ctl tap 540 1200
 
 `listen_lan=0` keeps port 5037 on localhost. Setting it to `1` exposes full
 control of the phone to the whole LAN — only do that behind a firewall or
-WireGuard. The CGI endpoint is unauthenticated unless `api_token` is set.
+WireGuard.
+
+### Web UI
+
+```
+http://<router>/adb/
+```
+
+A single-page Chinese UI on top of `/cgi-bin/adb-api`:
+
+- 概览：ADB 服务状态、已连接设备
+- 设备：列出设备、按 `ip:port` 网络连接、断开
+- 短信：收件箱列表（来自 `adb-sms`），支持“立即轮询”
+- 控制：截屏、点击/滑动/文本/按键、任意 `adb shell` 命令
+
+API 例子（`token` 必须带上）：
+
+```sh
+TOKEN=$(adb-ctl token)
+curl "http://192.168.1.29/cgi-bin/adb-api?action=status&token=$TOKEN"
+curl "http://192.168.1.29/cgi-bin/adb-api?action=sms&token=$TOKEN"
+curl "http://192.168.1.29/cgi-bin/adb-api?action=shell&cmd=id&token=$TOKEN"
+```
+
+- 首次启动会随机生成 token，写入 `/root/adb-token`（0600），也可用
+  `adb-ctl token` 查看、`adb-ctl token <new>` 修改
+- token 未设置时 API 不鉴权；设置后所有请求必须带 `token`
+- 只适合 LAN 使用，**不要**把 80 端口暴露到 WAN
+- 没有设备时截屏返回 HTTP 503，前端会提示失败
 
 Image impact is small (a few hundred KB): this uses the `adb` package that
 already exists in every supported tree.

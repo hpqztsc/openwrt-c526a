@@ -12,4 +12,12 @@ for s in adb adbnet adbsms; do
 	[ -x "/etc/init.d/$s" ] && "/etc/init.d/$s" enable
 done
 
+if [ -z "$(uci -q get adb.sms.api_token)" ]; then
+	tok=$(head -c 32 /dev/urandom | md5sum | cut -c1-16)
+	uci set adb.sms.api_token="$tok"
+	uci commit adb
+	echo "$tok" > /root/adb-token
+	chmod 600 /root/adb-token
+fi
+
 exit 0

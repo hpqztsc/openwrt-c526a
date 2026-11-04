@@ -1,0 +1,152 @@
+#!/bin/sh
+#
+# JSON API for the ADB web UI (/adb/).
+#
+. /usr/share/libubox/jshn.sh
+
+urldecode() {
+	local s="$1"
+	s="${s//+/ }"
+	printf '%b' "${s//%/\\x}"
+}
+
+get_param() {
+	local key="$1" pair
+	for pair in $(printf '%s' "${QUERY_STRING:-}" | tr '&' ' '); do
+		case "$pair" in
+		"$key="*) urldecode "${pair#*=}"; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+token=$(uci -q get adb.sms.api_token)
+req="${HTTP_X_TOKEN:-}"
+[ -n "$req" ] || req=$(get_param token)
+if [ -n "$token" ] && [ "$req" != "$token" ]; then
+	printf 'Status: 403 Forbidden\r\nContent-Type: application/json\r\n\r\n'
+	echo '{"error":"unauthorized"}'
+	exit 0
+fi
+
+action=$(get_param action)
+[ -n "$action" ] || action=status
+
+case "$action" in
+screenshot)
+	if ! adb devices 2>/dev/null | awk 'NR>1 && $2=="device"{f=1} END{exit !f}'; then
+		printf 'Status: 503 Service Unavailable\r\nContent-Type: application/json\r\n\r\n'
+		echo '{"error":"no device"}'
+		exit 0
+	fi
+	printf 'Content-Type: image/png\r\nCache-Control: no-store\r\n\r\n'
+	adb exec-out screencap -p 2>/dev/null && exit 0
+	adb shell screencap -p /data/local/tmp/_adb_web.png >/dev/null 2>&1
+	adb pull /data/local/tmp/_adb_web.png /tmp/_adb_web.png >/dev/null 2>&1
+	adb shell rm -f /data/local/tmp/_adb_web.png >/dev/null 2>&1
+	[ -s /tmp/_adb_web.png ] && cat /tmp/_adb_web.png
+	exit 0
+	;;
+esac
+
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+
+case "$action" in
+status)
+	json_init
+	json_add_string server "$(pgrep -f 'adb nodaemon server' >/dev/null 2>&1 && echo running || echo stopped)"
+	json_add_int auth "$([ -n "$token" ] && echo 1 || echo 0)"
+	json_add_array devices
+	adb devices 2>/dev/null | sed -n '2,$p' > "/tmp/.adbweb.$$"
+	while read -r id st rest; do
+		[ -n "$id" ] || continue
+		json_add_object
+		json_add_string id "$id"
+		json_add_string state "$st"
+		json_close_object
+	done < "/tmp/.adbweb.$$"
+	rm -f "/tmp/.adbweb.$$"
+	json_close_array
+	json_dump
+	;;
+devices)
+	json_init
+	json_add_array devices
+	adb devices -l 2>/dev/null | sed -n '2,$p' > "/tmp/.adbweb.$$"
+	while read -r line; do
+		[ -n "$line" ] || continue
+		json_add_string "" "$line"
+	done < "/tmp/.adbweb.$$"
+	rm -f "/tmp/.adbweb.$$"
+	json_close_array
+	json_dump
+	;;
+connect)
+	h=$(get_param host)
+	json_init
+	if [ -n "$h" ]; then
+		json_add_string output "$(adb connect "$h" 2>&1)"
+	else
+		json_add_string error "host required"
+	fi
+	json_dump
+	;;
+disconnect)
+	h=$(get_param host)
+	json_init
+	json_add_string output "$(adb disconnect "$h" 2>&1)"
+	json_dump
+	;;
+sms)
+	if [ -s /tmp/adb-sms.json ]; then
+		cat /tmp/adb-sms.json
+	else
+		echo '{"messages":[]}'
+	fi
+	;;
+poll)
+	/usr/bin/adb-sms --once >/dev/null 2>&1
+	if [ -s /tmp/adb-sms.json ]; then
+		cat /tmp/adb-sms.json
+	else
+		echo '{"messages":[]}'
+	fi
+	;;
+shell)
+	cmd=$(get_param cmd)
+	json_init
+	if [ -n "$cmd" ]; then
+		out=$(timeout 20 adb shell "$cmd" 2>&1)
+		json_add_string output "$out"
+	else
+		json_add_string error "cmd required"
+	fi
+	json_dump
+	;;
+input)
+	t=$(get_param type)
+	case "$t" in
+	tap)
+		adb shell input tap "$(get_param x)" "$(get_param y)" >/dev/null 2>&1
+		;;
+	swipe)
+		adb shell input swipe "$(get_param x)" "$(get_param y)" \
+			"$(get_param x2)" "$(get_param y2)" >/dev/null 2>&1
+		;;
+	text)
+		adb shell input text "$(get_param text)" >/dev/null 2>&1
+		;;
+	key)
+		adb shell input keyevent "$(get_param key)" >/dev/null 2>&1
+		;;
+	esac
+	json_init
+	json_add_string result ok
+	json_dump
+	;;
+*)
+	json_init
+	json_add_string error "unknown action"
+	json_dump
+	;;
+esac

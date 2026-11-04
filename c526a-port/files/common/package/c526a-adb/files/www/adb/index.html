@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADB 控制台 - HiWiFi C526A</title>
+<style>
+:root { color-scheme: light dark; --bg:#f4f6f8; --card:#fff; --fg:#1f2328; --muted:#6b7280; --line:#d8dee4; --accent:#2563eb; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --card:#171a21; --fg:#e6e6e6; --muted:#9aa4b2; --line:#2a2f3a; --accent:#60a5fa; } }
+* { box-sizing: border-box; }
+body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
+header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--card); border-bottom:1px solid var(--line); }
+h1 { font-size:17px; margin:0; }
+.token { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:12px; }
+.token input { width:150px; padding:5px 8px; }
+nav { display:flex; gap:6px; padding:10px 18px; background:var(--card); border-bottom:1px solid var(--line); overflow:auto; }
+nav button { border:1px solid var(--line); background:transparent; color:var(--fg); padding:6px 14px; border-radius:999px; cursor:pointer; white-space:nowrap; }
+nav button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+main { padding:16px 18px 40px; max-width:1100px; margin:0 auto; }
+section { display:none; }
+section.active { display:block; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px; }
+.row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+input, button, select { font:inherit; }
+input, select { padding:6px 9px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); }
+button { padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); cursor:pointer; }
+button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+pre, .out { background:rgba(127,127,127,.12); padding:10px; border-radius:8px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+table { width:100%; border-collapse:collapse; }
+th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:var(--muted); font-weight:500; font-size:12px; }
+.msg { border-bottom:1px solid var(--line); padding:10px 0; }
+.msg:last-child { border-bottom:0; }
+.msg .meta { color:var(--muted); font-size:12px; margin-bottom:4px; }
+#shot { max-width:100%; border-radius:8px; border:1px solid var(--line); }
+.muted { color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ADB 控制台 · HiWiFi C526A</h1>
+  <div class="token">
+    <span>API Token</span>
+    <input id="token" type="password" placeholder="见 /root/adb-token">
+    <button onclick="saveToken()">保存</button>
+  </div>
+</header>
+<nav>
+  <button class="active" data-tab="status">概览</button>
+  <button data-tab="devices">设备</button>
+  <button data-tab="sms">短信</button>
+  <button data-tab="control">控制</button>
+</nav>
+<main>
+  <section id="status" class="active">
+    <div class="card">
+      <div class="row"><button class="primary" onclick="refresh()">刷新</button><span id="statusLine" class="muted">加载中…</span></div>
+      <div id="statusBox"></div>
+    </div>
+  </section>
+
+  <section id="devices">
+    <div class="card">
+      <div class="row">
+        <button class="primary" onclick="loadDevices()">刷新设备</button>
+        <input id="host" placeholder="192.168.1.50:5555">
+        <button onclick="connectHost()">网络连接</button>
+        <button onclick="api('devices').then(renderDevices)">设备详情</button>
+      </div>
+      <div id="devicesBox" class="muted">未加载</div>
+    </div>
+  </section>
+
+  <section id="sms">
+    <div class="card">
+      <div class="row">
+        <button class="primary" onclick="loadSms()">刷新短信</button>
+        <button onclick="pollSms()">立即轮询</button>
+        <span id="smsCount" class="muted"></span>
+      </div>
+      <div id="smsBox" class="muted">未加载</div>
+    </div>
+  </section>
+
+  <section id="control">
+    <div class="card">
+      <div class="row"><button class="primary" onclick="shot()">截屏</button><span class="muted">截图会显示在下方</span></div>
+      <img id="shot" alt="" style="display:none">
+    </div>
+    <div class="card">
+      <div class="row">
+        <input id="tx" type="number" placeholder="X" style="width:90px">
+        <input id="ty" type="number" placeholder="Y" style="width:90px">
+        <button onclick="tapXY()">点击</button>
+        <input id="tx2" type="number" placeholder="X2" style="width:90px">
+        <input id="ty2" type="number" placeholder="Y2" style="width:90px">
+        <button onclick="swipeXY()">滑动</button>
+      </div>
+      <div class="row">
+        <input id="text" placeholder="要输入的文本" style="flex:1;min-width:180px">
+        <button onclick="sendText()">输入文本</button>
+        <input id="key" placeholder="键值 3=Home 4=Back" style="width:160px">
+        <button onclick="sendKey()">按键</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <input id="cmd" placeholder="adb shell 命令，例如 ls /sdcard" style="flex:1;min-width:200px">
+        <button class="primary" onclick="runShell()">执行</button>
+      </div>
+      <pre id="shellOut" class="out" style="min-height:80px"></pre>
+    </div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let token = localStorage.getItem('adbToken') || '';
+$('#token').value = token;
+
+function saveToken() {
+  token = $('#token').value.trim();
+  localStorage.setItem('adbToken', token);
+  refresh();
+}
+
+async function api(action, params = {}, raw = false) {
+  const q = new URLSearchParams(Object.assign({ action, token }, params));
+  const r = await fetch('/cgi-bin/adb-api?' + q.toString(), { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return raw ? r.blob() : r.json();
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === name));
+  if (name === 'devices') loadDevices();
+  if (name === 'sms') loadSms();
+  if (name === 'status') refresh();
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+async function refresh() {
+  try {
+    const d = await api('status');
+    const n = (d.devices || []).length;
+    $('#statusLine').textContent = '服务：' + (d.server === 'running' ? '运行中' : '已停止') +
+      '，已连接设备：' + n + (d.auth ? '，Token 已启用' : '，未设置 Token');
+    $('#statusBox').innerHTML = (d.devices || []).length
+      ? '<table><tr><th>设备</th><th>状态</th></tr>' +
+        d.devices.map(x => '<tr><td>' + esc(x.id) + '</td><td>' + esc(x.state) + '</td></tr>').join('') + '</table>'
+      : '<span class="muted">没有设备。USB 请先在手机上允许调试；网络设备用“设备”页连接。</span>';
+  } catch (e) {
+    $('#statusLine').textContent = '请求失败：' + e.message + '（检查 Token）';
+  }
+}
+
+async function loadDevices() {
+  try {
+    const d = await api('devices');
+    const list = d.devices || [];
+    $('#devicesBox').innerHTML = list.length
+      ? '<table><tr><th>设备</th></tr>' + list.map(x => '<tr><td>' + esc(x) + '</td></tr>').join('') + '</table>'
+      : '<span class="muted">没有设备</span>';
+  } catch (e) { $('#devicesBox').textContent = '请求失败：' + e.message; }
+}
+
+async function connectHost() {
+  const host = $('#host').value.trim();
+  if (!host) return;
+  const d = await api('connect', { host });
+  alert(d.output || d.error || '完成');
+  loadDevices();
+}
+
+async function loadSms() {
+  try {
+    const d = await api('sms');
+    renderSms(d);
+  } catch (e) { $('#smsBox').textContent = '请求失败：' + e.message; }
+}
+
+async function pollSms() {
+  const d = await api('poll');
+  renderSms(d);
+}
+
+function renderSms(d) {
+  const msgs = (d.messages || []).slice().reverse();
+  $('#smsCount').textContent = '共 ' + msgs.length + ' 条（最近 ' + msgs.length + ' 条）';
+  $('#smsBox').innerHTML = msgs.length
+    ? msgs.map(m => {
+        const t = m.date ? new Date(Number(m.date)).toLocaleString('zh-CN') : '';
+        return '<div class="msg"><div class="meta">' + esc(m.address) + ' · ' + esc(t) + ' · #' + esc(m.id) + '</div><div>' + esc(m.body) + '</div></div>';
+      }).join('')
+    : '<span class="muted">没有短信。确认手机已 root，且 ADB 已连接。</span>';
+}
+
+async function shot() {
+  try {
+    const b = await api('screenshot', {}, true);
+    const img = $('#shot');
+    if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
+    const u = URL.createObjectURL(b);
+    img.dataset.url = u; img.src = u; img.style.display = 'block';
+  } catch (e) { alert('截屏失败：' + e.message); }
+}
+
+async function tapXY() {
+  await api('input', { type: 'tap', x: $('#tx').value, y: $('#ty').value });
+}
+async function swipeXY() {
+  await api('input', { type: 'swipe', x: $('#tx').value, y: $('#ty').value, x2: $('#tx2').value, y2: $('#ty2').value });
+}
+async function sendText() {
+  await api('input', { type: 'text', text: $('#text').value });
+}
+async function sendKey() {
+  await api('input', { type: 'key', key: $('#key').value });
+}
+async function runShell() {
+  const cmd = $('#cmd').value.trim();
+  if (!cmd) return;
+  $('#shellOut').textContent = '执行中…';
+  try {
+    const d = await api('shell', { cmd });
+    $('#shellOut').textContent = d.output || d.error || '';
+  } catch (e) { $('#shellOut').textContent = '失败：' + e.message; }
+}
+
+showTab('status');
+refresh();
+</script>
+</body>
+</html>

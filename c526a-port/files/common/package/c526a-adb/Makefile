@@ -44,6 +44,9 @@ define Package/c526a-adb/install
 	$(INSTALL_BIN) ./files/usr/bin/adb-ctl $(1)/usr/bin/adb-ctl
 	$(INSTALL_DIR) $(1)/www/cgi-bin
 	$(INSTALL_BIN) ./files/www/cgi-bin/adb-sms $(1)/www/cgi-bin/adb-sms
+	$(INSTALL_BIN) ./files/www/cgi-bin/adb-api $(1)/www/cgi-bin/adb-api
+	$(INSTALL_DIR) $(1)/www/adb
+	$(INSTALL_DATA) ./files/www/adb/index.html $(1)/www/adb/index.html
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) ./files/etc/uci-defaults/95-c526a-adb $(1)/etc/uci-defaults/95-c526a-adb
 endef

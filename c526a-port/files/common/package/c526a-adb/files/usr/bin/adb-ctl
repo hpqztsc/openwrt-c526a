@@ -33,6 +33,15 @@ start adbd
 EOF
 		echo "adbd now listens on $port (persist.adb.tcp.port is set)"
 		;;
+	token)
+		if [ -n "$1" ]; then
+			uci set adb.sms.api_token="$1"
+			uci commit adb
+			echo "token set"
+		else
+			uci -q get adb.sms.api_token
+		fi
+		;;
 	shell)
 		exec adb shell "$@"
 		;;
@@ -86,6 +95,7 @@ usage: adb-ctl <command>
   tcpip [port]                put a USB-connected phone into TCP mode (default 5555)
   enable-tcp [port]           same, for a rooted phone without USB (persists)
   pair                        explain the Android 11+ pairing limitation
+  token [new]                 show or set the web UI API token
   shell <cmd>                 run a shell command on the device
   root                        restart adbd as root (userdebug/rooted)
   sms                         dump the SMS inbox (root required)
