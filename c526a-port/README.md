@@ -121,10 +121,14 @@ connected to the USB port. `package/c526a-adb` adds:
   in `/tmp/adb-sms/<serial>.json`, and new messages can be POSTed to a
   webhook or a Telegram bot (prefixed with the device serial)
 - `/www/cgi-bin/adb-api` — JSON API for the web UI (`devices`, `sms`, `poll`,
-  `shell`, `input`, `screenshot`, `connect`, `disconnect`)
+  `threads`, `contacts`, `calls`, `notifications`, `files`, `download`,
+  `system`, `apps`, `record`, `shell`, `input`, `screenshot`, `connect`,
+  `disconnect`)
 - `/www/cgi-bin/adb-sms` — legacy SMS endpoint; accepts `&device=<serial>`
-- `/www/adb/` — device-aware web console (device picker, SMS, screenshot,
-  input, shell); a ttyd instance on port 7682 opens an interactive shell
+- `/www/adb/` — device-aware web console: SMS inbox and MMS conversations,
+  contacts, call log, notifications, an `/sdcard` file browser with downloads,
+  phone/battery/signal/storage info, app list, screenshot, screen recording,
+  input, shell
 - `/usr/bin/adb-ctl [-s <serial>]` — `devices / connect / tcpip / enable-tcp /
   shell / sms / shot / tap / swipe / text / key / ui / install`
 
@@ -180,6 +184,26 @@ browser and drops a remembered selection as soon as the device disappears.
 SMS state and inbox files are per device, so switching the selection only
 changes which inbox is displayed. Use `adb-ctl -s <serial> ...` on the command
 line, and `adb.sms.serial` only when a single fixed phone should be polled.
+
+### Web console data views
+
+The `/adb/` tabs are read-only and query the phone as the ADB `shell` UID,
+falling back to `su` only when a provider denies access:
+
+- **短信** — inbox (`content://sms/inbox`) and MMS/conversations
+- **通讯** — contacts (`content://contacts/phones`) and the last 100 calls
+- **通知** — `dumpsys notification --noredact` (package, title, text)
+- **文件** — browse `/sdcard` (shortcuts for DCIM/Camera and Download) and
+  download files; downloads stream through `adb exec-out cat` so large videos
+  do not fill the RAM-backed `/tmp`
+- **系统** — model/Android/SDK/operator/signal, battery, storage, uptime and
+  the user-app package list
+- **控制** — screenshot, a 10-second screen recording (wakes a dozing screen),
+  tap/swipe/text/key and an `adb shell` box
+
+Access depends on the ROM: on the validated HyperOS/Android 16 phone the
+`shell` UID can read all of the above except app-private `/data/data`; AOSP
+and some vendor ROMs deny SMS/contacts/call log to `shell`.
 
 First use:
 

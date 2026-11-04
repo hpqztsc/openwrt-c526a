@@ -122,6 +122,38 @@ safe_serial() {
 	printf '%s' "$1" | tr ':/' '__'
 }
 
+# Run a content query as the shell UID, falling back to su only when the
+# provider denies it.  The query is passed as one argv: adb 1.0.32 keeps an
+# interactive shell alive when the command arrives on stdin.
+content_query() {
+	local uri="$1" projection="$2" sort="$3" q out
+
+	q="content query --uri $uri --projection $projection"
+	[ -n "$sort" ] && q="$q --sort \"$sort\""
+	out=$(adb_timeout 30 adb -s "$DEV" shell "$q" 2>&1)
+	case "$out" in
+	*"Error while accessing provider"*|*"Permission Denial"*|*"SecurityException"*)
+		out=$(adb_timeout 30 adb -s "$DEV" shell "su -c '$q'" 2>/dev/null)
+		;;
+	esac
+	printf '%s\n' "$out"
+}
+
+prop() {
+	adb -s "$DEV" shell getprop "$1" 2>/dev/null | tr -d '\r'
+}
+
+valid_sdcard_path() {
+	case "$1" in
+	/sdcard|/sdcard/*) ;;
+	*) return 1 ;;
+	esac
+	case "$1" in
+	*..*|*"'"*) return 1 ;;
+	esac
+	return 0
+}
+
 token=$(uci -q get adb.sms.api_token)
 req="${HTTP_X_TOKEN:-}"
 [ -n "$req" ] || req=$(get_param token)
@@ -157,6 +189,34 @@ if [ "$action" = "screenshot" ]; then
 		echo '{"error":"screenshot failed"}'
 	fi
 	rm -f /tmp/_adb_web.png
+	exit 0
+fi
+
+# File download must resolve the device before sending binary headers.
+if [ "$action" = "download" ]; then
+	p=$(get_param path)
+	if ! valid_sdcard_path "$p"; then
+		printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+		echo '{"error":"path must be under /sdcard"}'
+		exit 0
+	fi
+	if ! resolve_device; then
+		printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+		json_dump
+		exit 0
+	fi
+	ok=$(adb -s "$DEV" shell "[ -f '$p' ] && echo yes" 2>/dev/null)
+	if [ "$ok" != "yes" ]; then
+		printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+		echo '{"error":"not a regular file"}'
+		exit 0
+	fi
+	printf 'Content-Type: application/octet-stream\r\n'
+	printf 'Content-Disposition: attachment; filename="download"\r\n'
+	printf 'Cache-Control: no-store\r\n\r\n'
+	# Stream instead of pulling to /tmp: recordings and videos can be large,
+	# and /tmp is RAM-backed on OpenWrt.  exec-out is binary clean for cat.
+	adb -s "$DEV" exec-out cat "$p" 2>/dev/null
 	exit 0
 fi
 
@@ -213,6 +273,241 @@ poll)
 	else
 		json_init; json_add_string device "$DEV"; json_add_array messages; json_close_array; json_dump
 	fi
+	;;
+contacts)
+	resolve_device || { json_dump; exit 0; }
+	tsv="/tmp/.adb-rows.$$"
+	content_query content://contacts/phones _id:number:display_name "display_name ASC" |
+	sed -n 's/^Row: [0-9][0-9]* //p' |
+	awk -F', ' '{
+		id=$1; sub(/^_id=/, "", id)
+		num=$2; sub(/^number=/, "", num)
+		name=$3; sub(/^display_name=/, "", name)
+		for (i=4; i<=NF; i++) name=name ", " $i
+		if (name == "NULL") name=""
+		if (num == "NULL") num=""
+		if (name == "") name=num
+		gsub(/\t/, " ", name); gsub(/\t/, " ", num)
+		if (id != "") printf "%s\t%s\t%s\n", id, num, name
+	}' > "$tsv"
+	json_init
+	json_add_int count "$(wc -l < "$tsv" | tr -d ' ')"
+	json_add_array contacts
+	while IFS="$(printf '\t')" read -r id num name; do
+		json_add_object
+		json_add_string id "$id"
+		json_add_string number "$num"
+		json_add_string name "$name"
+		json_close_object
+	done < "$tsv"
+	json_close_array
+	rm -f "$tsv"
+	json_dump
+	;;
+calls)
+	resolve_device || { json_dump; exit 0; }
+	tsv="/tmp/.adb-rows.$$"
+	content_query content://call_log/calls _id:number:date:duration:type:geocoded_location:name "date DESC" |
+	sed -n 's/^Row: [0-9][0-9]* //p' |
+	awk -F', ' '{
+		id=$1; sub(/^_id=/, "", id)
+		num=$2; sub(/^number=/, "", num)
+		date=$3; sub(/^date=/, "", date)
+		dur=$4; sub(/^duration=/, "", dur)
+		type=$5; sub(/^type=/, "", type)
+		loc=$6; sub(/^geocoded_location=/, "", loc)
+		name=$7; sub(/^name=/, "", name)
+		for (i=8; i<=NF; i++) name=name ", " $i
+		if (name == "NULL") name=""
+		if (loc == "NULL") loc=""
+		gsub(/\t/, " ", name); gsub(/\t/, " ", loc)
+		if (id != "") printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, num, date, dur, type, loc, name
+	}' | head -n 100 > "$tsv"
+	json_init
+	json_add_int count "$(wc -l < "$tsv" | tr -d ' ')"
+	json_add_array calls
+	while IFS="$(printf '\t')" read -r id num date dur type loc name; do
+		json_add_object
+		json_add_string id "$id"
+		json_add_string number "$num"
+		json_add_string date "$date"
+		json_add_string duration "$dur"
+		json_add_string type "$type"
+		json_add_string location "$loc"
+		json_add_string name "$name"
+		json_close_object
+	done < "$tsv"
+	json_close_array
+	rm -f "$tsv"
+	json_dump
+	;;
+threads)
+	resolve_device || { json_dump; exit 0; }
+	tsv="/tmp/.adb-rows.$$"
+	content_query content://mms-sms/conversations _id:address:date:type:read:body "date DESC" |
+	sed -n 's/^Row: [0-9][0-9]* //p' |
+	awk -F', ' '{
+		id=$1; sub(/^_id=/, "", id)
+		addr=$2; sub(/^address=/, "", addr)
+		date=$3; sub(/^date=/, "", date)
+		type=$4; sub(/^type=/, "", type)
+		read=$5; sub(/^read=/, "", read)
+		body=$6; sub(/^body=/, "", body)
+		for (i=7; i<=NF; i++) body=body ", " $i
+		if (body == "NULL") body=""
+		gsub(/\t/, " ", body)
+		if (id != "") printf "%s\t%s\t%s\t%s\t%s\t%s\n", id, addr, date, type, read, body
+	}' | head -n 100 > "$tsv"
+	json_init
+	json_add_int count "$(wc -l < "$tsv" | tr -d ' ')"
+	json_add_array threads
+	while IFS="$(printf '\t')" read -r id addr date type read body; do
+		json_add_object
+		json_add_string id "$id"
+		json_add_string address "$addr"
+		json_add_string date "$date"
+		json_add_string type "$type"
+		json_add_string read "$read"
+		json_add_string body "$body"
+		json_close_object
+	done < "$tsv"
+	json_close_array
+	rm -f "$tsv"
+	json_dump
+	;;
+notifications)
+	resolve_device || { json_dump; exit 0; }
+	tsv="/tmp/.adb-rows.$$"
+	adb_timeout 20 adb -s "$DEV" shell "dumpsys notification --noredact" 2>/dev/null |
+	awk '
+	/NotificationRecord\(/ { pkg=""; if (match($0, /pkg=[^ ]+/)) pkg=substr($0, RSTART+4, RLENGTH-4); next }
+	/android\.title=/ {
+		line=$0; sub(/^[ \t]*android\.title=[^ ]+ \(/, "", line); sub(/\)[ \t]*$/, "", line)
+		gsub(/\t/, " ", line); title=line; next
+	}
+	/android\.text=/ {
+		line=$0; sub(/^[ \t]*android\.text=[^ ]+ \(/, "", line); sub(/\)[ \t]*$/, "", line)
+		gsub(/\t/, " ", line); text=line
+		if (title != "" || text != "") {
+			key=pkg SUBSEP title SUBSEP text
+			if (!seen[key]++) printf "%s\t%s\t%s\n", pkg, title, text
+			title=""
+		}
+	}' | head -n 50 > "$tsv"
+	json_init
+	json_add_int count "$(wc -l < "$tsv" | tr -d ' ')"
+	json_add_array notifications
+	while IFS="$(printf '\t')" read -r pkg title text; do
+		json_add_object
+		json_add_string package "$pkg"
+		json_add_string title "$title"
+		json_add_string text "$text"
+		json_close_object
+	done < "$tsv"
+	json_close_array
+	rm -f "$tsv"
+	json_dump
+	;;
+files)
+	p=$(get_param path)
+	[ -n "$p" ] || p=/sdcard
+	if ! valid_sdcard_path "$p"; then
+		json_error "path must be under /sdcard"
+		json_dump
+		exit 0
+	fi
+	resolve_device || { json_dump; exit 0; }
+	tsv="/tmp/.adb-rows.$$"
+	adb_timeout 20 adb -s "$DEV" shell "ls -1Ap '$p'" 2>/dev/null > "$tsv"
+	json_init
+	json_add_string path "$p"
+	json_add_array entries
+	while IFS= read -r name; do
+		[ -n "$name" ] || continue
+		case "$name" in
+		*/) dir=1; name=${name%/} ;;
+		*) dir=0 ;;
+		esac
+		json_add_object
+		json_add_string name "$name"
+		json_add_int dir "$dir"
+		json_close_object
+	done < "$tsv"
+	json_close_array
+	rm -f "$tsv"
+	json_dump
+	;;
+system)
+	resolve_device || { json_dump; exit 0; }
+	bat=$(adb_timeout 10 adb -s "$DEV" shell "dumpsys battery" 2>/dev/null)
+	tel=$(adb_timeout 10 adb -s "$DEV" shell "dumpsys telephony.registry" 2>/dev/null)
+	dfout=$(adb -s "$DEV" shell "df -k /sdcard" 2>/dev/null | tail -n 1)
+	uptime=$(adb -s "$DEV" shell "cat /proc/uptime" 2>/dev/null | awk '{ print int($1) }')
+	sig=$(printf '%s\n' "$tel" | grep -m 1 'mSignalStrength=' | sed -n 's/.*[^A-Za-z]level = \([0-9]*\).*/\1/p')
+	op=$(prop gsm.sim.operator.alpha)
+	[ -n "$op" ] || op=$(prop gsm.operator.alpha)
+	json_init
+	json_add_string model "$(prop ro.product.model)"
+	json_add_string manufacturer "$(prop ro.product.manufacturer)"
+	json_add_string android "$(prop ro.build.version.release)"
+	json_add_string sdk "$(prop ro.build.version.sdk)"
+	json_add_string hostname "$(prop net.hostname)"
+	json_add_string timezone "$(prop persist.sys.timezone)"
+	json_add_string operator "$op"
+	json_add_string signal_level "$sig"
+	json_add_string battery_level "$(printf '%s\n' "$bat" | sed -n 's/^[[:space:]]*level: //p' | head -n 1)"
+	json_add_string battery_status "$(printf '%s\n' "$bat" | sed -n 's/^[[:space:]]*status: //p' | head -n 1)"
+	json_add_string battery_temp "$(printf '%s\n' "$bat" | sed -n 's/^[[:space:]]*temperature: //p' | head -n 1)"
+	json_add_string battery_voltage "$(printf '%s\n' "$bat" | sed -n 's/^[[:space:]]*voltage: //p' | head -n 1)"
+	json_add_string storage_total "$(printf '%s\n' "$dfout" | awk '{ print $2 }')"
+	json_add_string storage_used "$(printf '%s\n' "$dfout" | awk '{ print $3 }')"
+	json_add_string storage_avail "$(printf '%s\n' "$dfout" | awk '{ print $4 }')"
+	json_add_string uptime "$uptime"
+	json_dump
+	;;
+apps)
+	resolve_device || { json_dump; exit 0; }
+	tsv="/tmp/.adb-rows.$$"
+	adb_timeout 20 adb -s "$DEV" shell "pm list packages -3" 2>/dev/null |
+	sed -n 's/^package://p' | sort > "$tsv"
+	total=$(adb -s "$DEV" shell "pm list packages" 2>/dev/null | wc -l | tr -d ' ')
+	json_init
+	json_add_int count "$(wc -l < "$tsv" | tr -d ' ')"
+	json_add_int total "$total"
+	json_add_array apps
+	while IFS= read -r pkg; do
+		[ -n "$pkg" ] || continue
+		json_add_object
+		json_add_string package "$pkg"
+		json_close_object
+	done < "$tsv"
+	json_close_array
+	rm -f "$tsv"
+	json_dump
+	;;
+record)
+	resolve_device || { json_dump; exit 0; }
+	secs=$(get_param seconds)
+	case "$secs" in ''|*[!0-9]*) secs=10 ;; esac
+	[ "$secs" -lt 3 ] && secs=3
+	[ "$secs" -gt 30 ] && secs=30
+	path="/sdcard/adb-record-$(date +%s).mp4"
+	# screenrecord fails with INVALID_LAYER_STACK while the panel is dozing.
+	adb -s "$DEV" shell input keyevent 224 >/dev/null 2>&1
+	sleep 1
+	adb_timeout $((secs + 15)) adb -s "$DEV" shell "screenrecord --time-limit $secs '$path'" >/dev/null 2>&1
+	size=$(adb -s "$DEV" shell "stat -c %s '$path'" 2>/dev/null | tr -dc '0-9')
+	json_init
+	if [ -n "$size" ] && [ "$size" -gt 0 ] 2>/dev/null; then
+		json_add_string path "$path"
+		json_add_int seconds "$secs"
+		json_add_int size "$size"
+		json_add_string result ok
+	else
+		adb -s "$DEV" shell "rm -f '$path'" >/dev/null 2>&1
+		json_add_string error "screenrecord failed; check the screen state"
+	fi
+	json_dump
 	;;
 shell)
 	cmd=$(get_param cmd)
