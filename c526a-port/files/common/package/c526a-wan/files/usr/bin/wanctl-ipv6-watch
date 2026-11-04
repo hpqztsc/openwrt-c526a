@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+# Keep one healthy IPv6 uplink as the odhcpd relay master.  Runs from procd.
+#
+STATE=/var/run/wanctl-ipv6.state
+fail=0
+ok=0
+[ -f "$STATE" ] && . "$STATE"
+
+while :; do
+	current=$(wanctl ipv6 active)
+	if [ -n "$current" ] && wanctl ipv6 health "$current"; then
+		fail=0
+		ok=$((ok + 1))
+		if [ "$ok" -ge 3 ]; then
+			best=$(wanctl ipv6 best)
+			if [ -n "$best" ] && [ "$best" != "$current" ]; then
+				wanctl ipv6 select >/dev/null 2>&1
+				ok=0
+			fi
+		fi
+	else
+		ok=0
+		fail=$((fail + 1))
+		if [ "$fail" -ge 2 ]; then
+			wanctl ipv6 select >/dev/null 2>&1
+			fail=0
+		fi
+	fi
+	printf 'fail=%s\nok=%s\n' "$fail" "$ok" > "$STATE"
+	sleep 20
+done

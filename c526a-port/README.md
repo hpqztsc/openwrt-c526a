@@ -368,6 +368,28 @@ wanctl smart flush                  # 清空全部
 - 上线后自动加入 mwan3，优先级由 `order` 控制（默认 `wan wan2 wwan usbwan`）
 - 页面 `/wan/` 的“第二 WAN”卡片可以直接改端口/协议/静态地址/PPPoE 账号
 
+### IPv6 出口（relay / nat66 / off）
+
+`/wan/` 页面有“IPv6 出口”卡片，也可以命令行管理：
+
+```sh
+wanctl ipv6 status                 # 模式、当前出口、各上行健康/前缀
+wanctl ipv6 mode relay             # LAN 直接获得上游 /64（odhcpd relay + NDP proxy）
+wanctl ipv6 mode nat66             # LAN 用 ULA + NAT66
+wanctl ipv6 mode off               # 不改 LAN IPv6
+wanctl ipv6 uplink auto|wan|usbwan # 优先出口
+wanctl ipv6 select                 # 立即重新选择
+wanctl ipv6 dump                   # JSON（网页用）
+```
+
+- `relay` 是默认模式：只允许**一个**上行做 odhcpd relay master，LAN 设备拿到上游公网前缀；`proxy_ndp` 自动打开，WAN zone 的 `masq6` 关闭。
+- `nat66`：LAN 使用 ULA `fd38:fe13:52b8::/64`，WAN zone `masq6=1`，上行只作为出口。
+- 冲突处理：`wanctl ipv6 select` 会保证只有一个 master；其余上行的 `dhcp.<iface>6` 被设为 `ignore=1`，避免多个 RA/前缀同时下发。
+- `wanctl-ipv6-watch` 每 20 秒检查当前出口；连续 2 次不健康就切换，优先线路恢复 3 个周期后切回。切换时 flush conntrack 并重启 odhcpd。
+- 手机 USB 的 `usbwan6` 由 `wanctl apply` 自动创建（`proto dhcpv6`、`reqaddress try`、`reqprefix auto`），`accept_ra=2` 由 hotplug 恢复。
+
+注意：relay 依赖上游把 `/64` 真正路由到本机（Android 共享已验证可行）；如果上游只给 on-link 前缀且不转发，或者需要 PD，则要换用支持前缀委派的上行。
+
 ## Known limitations / verify on hardware
 
 1. **DSA port order.** swconfig ports 2/3/4 were LAN, 5 was WAN; the DTS maps

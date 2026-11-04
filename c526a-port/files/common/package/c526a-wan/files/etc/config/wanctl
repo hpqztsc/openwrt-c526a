@@ -11,6 +11,10 @@ config globals 'globals'
 	# IPv6 mode: relay = LAN gets the uplink prefix (public addresses),
 	# nat66 = ULA + masquerade, off = no LAN IPv6
 	option ipv6_mode 'relay'
+	# auto, or an uplink name to prefer when it is healthy
+	option ipv6_uplink 'auto'
+	# maintained by wanctl, shown in the web UI
+	option ipv6_active ''
 
 config uplink 'wan'
 	option enabled '1'

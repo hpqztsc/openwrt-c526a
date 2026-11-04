@@ -12,6 +12,7 @@
 # them into /etc/config/network, /etc/config/firewall and /etc/config/mwan3.
 #
 [ -f /lib/functions.sh ] && . /lib/functions.sh
+[ -f /usr/share/libubox/jshn.sh ] && . /usr/share/libubox/jshn.sh
 
 WANCTL=wanctl
 MW=mwan3
@@ -217,46 +218,223 @@ ensure_firewall() {
 }
 
 # LAN IPv6: relay the uplink prefix (public addresses) or use ULA + NAT66.
-ensure_ipv6() {
-	local mode dev
+# Only one uplink may be the relay master; the watchdog keeps it that way.
+
+ipv6_iface6() {
+	local name=$1 iface
+	iface=$(cget "$name.interface")
+	[ -n "$iface" ] || iface=$name
+	echo "${iface}6"
+}
+
+# print every enabled uplink that has an IPv6 companion
+ipv6_candidates() {
+	local name iface6
+	for name in $(ordered_uplinks); do
+		[ "$(cget "$name.enabled")" = 1 ] || continue
+		iface6=$(ipv6_iface6 "$name")
+		uci -q get "network.$iface6" >/dev/null 2>&1 || continue
+		echo "$name"
+	done
+}
+
+ipv6_active() {
+	local active name iface6
+	active=$(cget globals.ipv6_active)
+	if [ -n "$active" ]; then
+		echo "$active"
+		return 0
+	fi
+	for name in $(ipv6_candidates); do
+		iface6=$(ipv6_iface6 "$name")
+		[ "$(uci -q get "dhcp.$iface6.master")" = 1 ] && {
+			echo "$name"
+			return 0
+		}
+	done
+	return 0
+}
+
+ipv6_health() {
+	local name iface6 st up addr dev
+	name=$1
+	[ -n "$name" ] || return 1
+	iface6=$(ipv6_iface6 "$name")
+	st=$(ubus call network.interface."$iface6" status 2>/dev/null)
+	up=$(printf '%s' "$st" | jsonfilter -e '@.up' 2>/dev/null)
+	addr=$(printf '%s' "$st" | jsonfilter -e '@["ipv6-address"][0].address' 2>/dev/null)
+	dev=$(printf '%s' "$st" | jsonfilter -e '@.l3_device' 2>/dev/null)
+	[ "$up" = "true" ] || return 1
+	[ -n "$addr" ] || return 1
+	[ -n "$dev" ] || return 1
+	ping -6 -I "$dev" -c 1 -W 2 2400:3200::1 >/dev/null 2>&1 && return 0
+	ping -6 -I "$dev" -c 1 -W 2 240c::6666 >/dev/null 2>&1 && return 0
+	return 1
+}
+
+ipv6_best() {
+	local name
+	for name in $(ipv6_candidates); do
+		if ipv6_health "$name"; then
+			echo "$name"
+			return 0
+		fi
+	done
+	return 1
+}
+
+ipv6_pick() {
+	local manual
+	manual=$(cget globals.ipv6_uplink)
+	[ -n "$manual" ] || manual=auto
+	if [ "$manual" != "auto" ]; then
+		[ "$(cget "$manual")" = "uplink" ] || manual=auto
+	fi
+	if [ "$manual" != "auto" ] && ipv6_health "$manual"; then
+		echo "$manual"
+		return 0
+	fi
+	ipv6_best
+}
+
+# Make the dhcp/odhcpd configuration consistent: exactly one relay master
+# (or none), the right LAN mode, masq6 and proxy_ndp.
+ipv6_normalize() {
+	local mode active name iface6 zone dev
 
 	mode=$(cget globals.ipv6_mode)
 	[ -n "$mode" ] || mode=relay
+	[ "$mode" = "off" ] && return 0
+	active=$1
 
-	case "$mode" in
-	relay)
+	for name in $(ipv6_candidates); do
+		iface6=$(ipv6_iface6 "$name")
+		u_set "dhcp.$iface6" dhcp
+		u_set "dhcp.$iface6.interface" "$iface6"
+		if [ "$mode" = "relay" ] && [ "$name" = "$active" ]; then
+			u_set "dhcp.$iface6.master" 1
+			u_set "dhcp.$iface6.ignore" 0
+			u_set "dhcp.$iface6.ra" relay
+			u_set "dhcp.$iface6.dhcpv6" relay
+			u_set "dhcp.$iface6.ndp" relay
+		else
+			u_set "dhcp.$iface6.master" 0
+			u_set "dhcp.$iface6.ignore" 1
+		fi
+	done
+
+	if [ "$mode" = "relay" ]; then
 		u_set dhcp.lan.ra relay
 		u_set dhcp.lan.dhcpv6 relay
 		u_set dhcp.lan.ndp relay
 		u_set dhcp.lan.master 0
 		u_set dhcp.lan.ignore 0
-		if [ "$(cget usbwan.enabled)" = 1 ]; then
-			u_set dhcp.usbwan6 dhcp
-			u_set dhcp.usbwan6.interface usbwan6
-			u_set dhcp.usbwan6.master 1
-			u_set dhcp.usbwan6.ra relay
-			u_set dhcp.usbwan6.dhcpv6 relay
-			u_set dhcp.usbwan6.ndp relay
-			u_set dhcp.usbwan6.ignore 0
-		fi
-		if [ "$DRY" != 1 ]; then
-			echo 1 > /proc/sys/net/ipv6/conf/all/proxy_ndp 2>/dev/null
-			echo 1 > /proc/sys/net/ipv6/conf/br-lan/proxy_ndp 2>/dev/null
-			dev=$(uci -q get network.usbwan.device)
-			[ -n "$dev" ] && echo 1 > "/proc/sys/net/ipv6/conf/$dev/proxy_ndp" 2>/dev/null
-		fi
-		;;
-	nat66)
+	else
 		u_set dhcp.lan.ra server
 		u_set dhcp.lan.dhcpv6 server
 		u_set dhcp.lan.ra_slaac 1
 		u_set dhcp.lan.ra_management 2
 		u_set dhcp.lan.ra_default 1
 		u_set dhcp.lan.ignore 0
-		;;
-	esac
+	fi
 
+	u_set "$WANCTL.globals.ipv6_active" "$active"
 	u_commit dhcp
+	u_commit "$WANCTL"
+
+	zone=$(zone_wan) || return 0
+	if [ "$mode" = "nat66" ]; then
+		u_set "firewall.$zone.masq6" 1
+	else
+		u_set "firewall.$zone.masq6" 0
+	fi
+	u_commit firewall
+
+	if [ "$DRY" != 1 ] && [ "$mode" = "relay" ]; then
+		echo 1 > /proc/sys/net/ipv6/conf/all/proxy_ndp 2>/dev/null
+		echo 1 > /proc/sys/net/ipv6/conf/br-lan/proxy_ndp 2>/dev/null
+		if [ -n "$active" ]; then
+			dev=$(uci -q get "network.$(ipv6_iface6 "$active").device")
+			[ -n "$dev" ] && echo 1 > "/proc/sys/net/ipv6/conf/$dev/proxy_ndp" 2>/dev/null
+		fi
+	fi
+}
+
+# Switch the active IPv6 uplink if needed; no config writes when unchanged.
+ipv6_select_apply() {
+	local old new
+	old=$(ipv6_active)
+	new=$(ipv6_pick)
+	[ -n "$new" ] || new=""
+	[ "$old" = "$new" ] && return 0
+	ipv6_normalize "$new"
+	log "ipv6 active ${old:-none} -> ${new:-none}"
+	[ "$DRY" = 1 ] && return 0
+	echo f > /proc/net/nf_conntrack 2>/dev/null
+	[ -x /etc/init.d/odhcpd ] && /etc/init.d/odhcpd restart >/dev/null 2>&1
+}
+
+ensure_ipv6() {
+	local mode active
+	mode=$(cget globals.ipv6_mode)
+	[ -n "$mode" ] || mode=relay
+	[ "$mode" = "off" ] && return 0
+	active=$(ipv6_pick)
+	[ -n "$active" ] || active=""
+	ipv6_normalize "$active"
+}
+
+ipv6_dump() {
+	local mode active setting name iface6 st up addr gw dev healthy
+
+	mode=$(cget globals.ipv6_mode); [ -n "$mode" ] || mode=relay
+	active=$(ipv6_active)
+	setting=$(cget globals.ipv6_uplink); [ -n "$setting" ] || setting=auto
+
+	json_init
+	json_add_string mode "$mode"
+	json_add_string active "$active"
+	json_add_string setting "$setting"
+	json_add_array candidates
+	for name in $(ipv6_candidates); do
+		iface6=$(ipv6_iface6 "$name")
+		st=$(ubus call network.interface."$iface6" status 2>/dev/null)
+		up=$(printf '%s' "$st" | jsonfilter -e '@.up' 2>/dev/null)
+		addr=$(printf '%s' "$st" | jsonfilter -e '@["ipv6-address"][0].address' 2>/dev/null)
+		gw=$(printf '%s' "$st" | jsonfilter -e '@.route[*].nexthop' 2>/dev/null | grep -v '^::' | head -n 1)
+		healthy=0
+		[ "$up" = "true" ] && [ -n "$addr" ] && healthy=1
+		json_add_object
+		json_add_string name "$name"
+		json_add_string iface "$iface6"
+		json_add_boolean up "$([ "$up" = "true" ] && echo 1 || echo 0)"
+		json_add_string addr "$addr"
+		json_add_string gw "$gw"
+		json_add_boolean healthy "$healthy"
+		json_close_object
+	done
+	json_close_array
+	json_dump
+}
+
+ipv6_status() {
+	local mode active setting name iface6 st up addr gw healthy
+
+	mode=$(cget globals.ipv6_mode); [ -n "$mode" ] || mode=relay
+	active=$(ipv6_active)
+	setting=$(cget globals.ipv6_uplink); [ -n "$setting" ] || setting=auto
+	printf 'mode=%s active=%s setting=%s\n' "$mode" "${active:-none}" "$setting"
+	for name in $(ipv6_candidates); do
+		iface6=$(ipv6_iface6 "$name")
+		st=$(ubus call network.interface."$iface6" status 2>/dev/null)
+		up=$(printf '%s' "$st" | jsonfilter -e '@.up' 2>/dev/null)
+		addr=$(printf '%s' "$st" | jsonfilter -e '@["ipv6-address"][0].address' 2>/dev/null)
+		gw=$(printf '%s' "$st" | jsonfilter -e '@.route[*].nexthop' 2>/dev/null | grep -v '^::' | head -n 1)
+		healthy=no
+		ipv6_health "$name" && healthy=yes
+		printf '%-8s %-10s up=%-5s healthy=%-3s addr=%-40s gw=%s\n' \
+			"$name" "$iface6" "${up:-?}" "$healthy" "${addr:--}" "${gw:--}"
+	done
 }
 
 mwan3_conf() {
@@ -651,6 +829,11 @@ usage: wanctl <command>
                             force this destination through <uplink> first
   smart del <ip|cidr>       remove a destination from all sets
   smart flush [uplink]      empty one or all destination sets
+  ipv6 status               show IPv6 mode, active uplink and candidates
+  ipv6 mode relay|nat66|off set LAN IPv6 mode
+  ipv6 uplink auto|<name>   prefer an IPv6 uplink
+  ipv6 select               re-select the active IPv6 uplink now
+  ipv6 dump                 JSON status
   usb-detect                print USB network interfaces seen by the kernel
 
 Examples:
@@ -770,6 +953,41 @@ route)
 	list)
 		uci -q show "$WANCTL" | grep '=route' || true
 		;;
+	*) usage; exit 1 ;;
+	esac
+	;;
+ipv6)
+	act=$1; shift
+	case "$act" in
+	status) ipv6_status ;;
+	dump) ipv6_dump ;;
+	mode)
+		m=$1
+		case "$m" in
+		relay|nat66|off) ;;
+		*) usage; exit 1 ;;
+		esac
+		uci set "$WANCTL.globals.ipv6_mode=$m"
+		uci commit "$WANCTL"
+		apply
+		;;
+	uplink)
+		u=$1
+		[ -n "$u" ] || { usage; exit 1; }
+		if [ "$u" != "auto" ]; then
+			[ "$(cget "$u")" = "uplink" ] || {
+				echo "wanctl: unknown uplink '$u'" >&2
+				exit 1
+			}
+		fi
+		uci set "$WANCTL.globals.ipv6_uplink=$u"
+		uci commit "$WANCTL"
+		apply
+		;;
+	select) ipv6_select_apply ;;
+	active) ipv6_active ;;
+	best) ipv6_best ;;
+	health) ipv6_health "$1" ;;
 	*) usage; exit 1 ;;
 	esac
 	;;

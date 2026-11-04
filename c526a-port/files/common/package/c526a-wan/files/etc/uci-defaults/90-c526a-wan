@@ -3,6 +3,7 @@
 # Enable the multi-uplink service on first boot.
 #
 [ -x /etc/init.d/wanctl ] && /etc/init.d/wanctl enable
+[ -x /etc/init.d/wanctl-ipv6 ] && /etc/init.d/wanctl-ipv6 enable
 [ -x /etc/init.d/mwan3 ] && /etc/init.d/mwan3 enable
 [ -x /usr/bin/wanctl ] && /usr/bin/wanctl apply >/dev/null 2>&1
 

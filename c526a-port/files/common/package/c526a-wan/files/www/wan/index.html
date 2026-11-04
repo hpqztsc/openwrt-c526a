@@ -71,6 +71,24 @@ label.f { display:flex; flex-direction:column; gap:4px; font-size:12px; color:va
   </div>
 
   <div class="card">
+    <h2>IPv6 出口</h2>
+    <div class="row">
+      <button id="v6Relay" onclick="setIPv6('relay')">公网中继</button>
+      <button id="v6Nat66" onclick="setIPv6('nat66')">ULA + NAT66</button>
+      <button id="v6Off" onclick="setIPv6('off')">关闭</button>
+      <span id="v6Hint" class="muted"></span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label class="meta">优先出口
+        <select id="v6Uplink" onchange="setIPv6Uplink(this.value)">
+          <option value="auto">自动（按优先级）</option>
+        </select>
+      </label>
+    </div>
+    <div id="v6State" class="muted" style="margin-top:8px">加载中…</div>
+  </div>
+
+  <div class="card">
     <h2>第二 WAN（wan2 / lan3）</h2>
     <div class="grid">
       <label class="f">模式
@@ -132,6 +150,7 @@ label.f { display:flex; flex-direction:column; gap:4px; font-size:12px; color:va
 const $ = s => document.querySelector(s);
 let token = localStorage.getItem('wanToken') || '';
 let status = null;
+let ipv6 = null;
 $('#token').value = token;
 
 function saveToken() {
@@ -210,11 +229,43 @@ function render() {
   $('#mwan3').textContent = status.mwan3 || '';
   $('#log').textContent = status.log || '';
   $('#usbHint').textContent = (status.usb || []).map(x => x.device + ' [' + x.driver + ']').join('，') || '未检测到 USB 网卡';
+  renderIPv6();
+}
+
+function renderIPv6() {
+  if (!ipv6) return;
+  const mode = ipv6.mode || 'relay';
+  $('#v6Relay').classList.toggle('active', mode === 'relay');
+  $('#v6Nat66').classList.toggle('active', mode === 'nat66');
+  $('#v6Off').classList.toggle('active', mode === 'off');
+  const names = {
+    relay: '公网中继：LAN 直接获得上游 /64',
+    nat66: 'ULA + NAT66：LAN 使用内网 IPv6',
+    off: '已关闭 LAN IPv6'
+  };
+  $('#v6Hint').textContent = names[mode] + (ipv6.active ? ' · 当前 ' + ipv6.active : ' · 当前没有可用 IPv6 上行');
+  const sel = $('#v6Uplink');
+  const opts = ['auto'].concat((ipv6.candidates || []).map(c => c.name));
+  if (document.activeElement !== sel) {
+    sel.innerHTML = opts.map(n => '<option value="' + n + '">' + (n === 'auto' ? '自动（按优先级）' : n) + '</option>').join('');
+    sel.value = ipv6.setting || 'auto';
+  }
+  $('#v6State').innerHTML = (ipv6.candidates || []).map(c =>
+    '<div class="uplink"><div class="name">' + dot(c.up, 1) +
+    '<b>' + c.name + '</b> <span class="meta">(' + c.iface + ')</span></div>' +
+    '<div class="meta">' + (c.addr || '无地址') + (c.gw ? ' · 网关 ' + c.gw : '') +
+    ' · ' + (c.healthy ? '在线' : '不可用') + '</div></div>'
+  ).join('') || '<span class="muted">没有带 IPv6 的上行</span>';
 }
 
 async function refresh() {
   try {
-    status = await api('status');
+    const [s, v] = await Promise.all([
+      api('status'),
+      api('ipv6').catch(() => null)
+    ]);
+    status = s;
+    ipv6 = v;
     render();
   } catch (e) {
     $('#check').textContent = '请求失败：' + e.message + '（检查 Token）';
@@ -222,6 +273,8 @@ async function refresh() {
 }
 
 async function setPolicy(mode) { await api('policy', { mode }); refresh(); }
+async function setIPv6(mode) { await api('ipv6-mode', { mode }); refresh(); }
+async function setIPv6Uplink(name) { await api('ipv6-uplink', { name }); refresh(); }
 async function pin(name) { await api('policy', { mode: 'only_' + name }); refresh(); }
 async function move(name, dir) {
   const order = orderList();

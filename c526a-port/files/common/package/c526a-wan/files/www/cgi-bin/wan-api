@@ -187,6 +187,29 @@ usb-detect)
 	json_close_array
 	json_dump
 	;;
+ipv6)
+	/usr/bin/wanctl ipv6 dump > /tmp/.wanipv6.$$ 2>/dev/null
+	cat /tmp/.wanipv6.$$
+	rm -f /tmp/.wanipv6.$$
+	;;
+ipv6-mode)
+	mode=$(get_param mode)
+	case "$mode" in
+	relay|nat66|off) run_wanctl ipv6 mode "$mode" ;;
+	*) json_init; json_add_string error "bad mode"; json_dump ;;
+	esac
+	;;
+ipv6-uplink)
+	name=$(get_param name)
+	if [ -n "$name" ] && { [ "$name" = "auto" ] || [ "$(uci -q get "wanctl.$name")" = "uplink" ]; }; then
+		run_wanctl ipv6 uplink "$name"
+	else
+		json_init; json_add_string error "bad uplink"; json_dump
+	fi
+	;;
+ipv6-select)
+	run_wanctl ipv6 select
+	;;
 apply)
 	run_wanctl apply
 	;;
