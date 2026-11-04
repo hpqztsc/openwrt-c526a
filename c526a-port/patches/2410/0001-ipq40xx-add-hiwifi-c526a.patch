@@ -19,7 +19,7 @@ index 549e1ac..b9edcd7 100644
  		;;
 +	hiwifi,c526a|\
 +	hiwifi,c526a-128m)
-+		lan_mac=$(mtd_get_mac_ascii bdinfo "Vfac_mac ")
++		lan_mac=$(mtd_get_mac_ascii bdinfo "Vfac_mac")
 +		wan_mac=$(macaddr_add "$lan_mac" 1)
 +		label_mac=$lan_mac
 +		;;
@@ -37,7 +37,7 @@ index 9581472..1ad25c0 100644
 +	hiwifi,c526a|\
 +	hiwifi,c526a-128m)
 +		caldata_extract "ART" 0x1000 0x2f20
-+		ath10k_patch_mac $(macaddr_add $(mtd_get_mac_ascii bdinfo "Vfac_mac ") 2)
++		ath10k_patch_mac $(macaddr_add $(mtd_get_mac_ascii bdinfo "Vfac_mac") 2)
 +		;;
  	devolo,magic-2-wifi-next)
  		caldata_extract "ART" 0x1000 0x2f20
@@ -49,7 +49,7 @@ index 9581472..1ad25c0 100644
 +	hiwifi,c526a|\
 +	hiwifi,c526a-128m)
 +		caldata_extract "ART" 0x5000 0x2f20
-+		ath10k_patch_mac $(macaddr_add $(mtd_get_mac_ascii bdinfo "Vfac_mac ") 3)
++		ath10k_patch_mac $(macaddr_add $(mtd_get_mac_ascii bdinfo "Vfac_mac") 3)
 +		;;
  	devolo,magic-2-wifi-next)
  		caldata_extract "ART" 0x5000 0x2f20
@@ -64,7 +64,7 @@ index 12d9b4e..9958a80 100644
  		;;
 +	hiwifi,c526a|\
 +	hiwifi,c526a-128m)
-+		base_mac="$(mtd_get_mac_ascii bdinfo "Vfac_mac ")"
++		base_mac="$(mtd_get_mac_ascii bdinfo "Vfac_mac")"
 +		ip link set dev eth0 address "$base_mac"
 +		ip link set dev lan1 address "$base_mac"
 +		ip link set dev lan2 address "$base_mac"

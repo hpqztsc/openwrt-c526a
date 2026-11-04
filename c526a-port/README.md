@@ -351,8 +351,11 @@ wanctl --dry-run apply
    `board-2.bin` by `/lib/preinit/90_c526a_bdf` (after `mount_root`, before
    `kmodloader` probes ath10k). A direct install would clash with the file
    owned by `ath10k-board-qca4019`, which apk refuses to overwrite.
-5. **MAC addresses.** LAN MAC comes from the ASCII `Vfac_mac ` key in `bdinfo`
-   (SPI-NOR); WAN is `+1`, radios are `+2` / `+3`.
+5. **MAC addresses.** LAN MAC comes from the ASCII `Vfac_mac` key in `bdinfo`
+   (SPI-NOR); WAN is `+1`, radios are `+2` / `+3`. Note the key must be passed
+   **without** the trailing space: `get_mac_ascii` strips spaces from `strings`
+   output, so `"Vfac_mac "` silently returns nothing and netifd falls back to a
+   random MAC (`option macaddr ':'`).
 6. **`mt7615_reboot`** unloads `mt7615e` before reboot; keep it unless proven
    unnecessary.
 
