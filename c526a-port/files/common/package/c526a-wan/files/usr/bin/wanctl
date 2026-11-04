@@ -197,7 +197,10 @@ ensure_firewall() {
 
 	zone=$(zone_wan) || return 0
 	u_set "firewall.$zone.masq" 1
-	u_set "firewall.$zone.masq6" 1
+	case "$(cget globals.ipv6_mode)" in
+	nat66) u_set "firewall.$zone.masq6" 1 ;;
+	*) u_set "firewall.$zone.masq6" 0 ;;
+	esac
 	u_set "firewall.$zone.mtu_fix" 1
 	for name in $(ordered_uplinks); do
 		[ "$(cget "$name.enabled")" = 1 ] || continue
@@ -211,6 +214,49 @@ ensure_firewall() {
 			u_add_list "firewall.$zone.network" "${iface}6"
 		fi
 	done
+}
+
+# LAN IPv6: relay the uplink prefix (public addresses) or use ULA + NAT66.
+ensure_ipv6() {
+	local mode dev
+
+	mode=$(cget globals.ipv6_mode)
+	[ -n "$mode" ] || mode=relay
+
+	case "$mode" in
+	relay)
+		u_set dhcp.lan.ra relay
+		u_set dhcp.lan.dhcpv6 relay
+		u_set dhcp.lan.ndp relay
+		u_set dhcp.lan.master 0
+		u_set dhcp.lan.ignore 0
+		if [ "$(cget usbwan.enabled)" = 1 ]; then
+			u_set dhcp.usbwan6 dhcp
+			u_set dhcp.usbwan6.interface usbwan6
+			u_set dhcp.usbwan6.master 1
+			u_set dhcp.usbwan6.ra relay
+			u_set dhcp.usbwan6.dhcpv6 relay
+			u_set dhcp.usbwan6.ndp relay
+			u_set dhcp.usbwan6.ignore 0
+		fi
+		if [ "$DRY" != 1 ]; then
+			echo 1 > /proc/sys/net/ipv6/conf/all/proxy_ndp 2>/dev/null
+			echo 1 > /proc/sys/net/ipv6/conf/br-lan/proxy_ndp 2>/dev/null
+			dev=$(uci -q get network.usbwan.device)
+			[ -n "$dev" ] && echo 1 > "/proc/sys/net/ipv6/conf/$dev/proxy_ndp" 2>/dev/null
+		fi
+		;;
+	nat66)
+		u_set dhcp.lan.ra server
+		u_set dhcp.lan.dhcpv6 server
+		u_set dhcp.lan.ra_slaac 1
+		u_set dhcp.lan.ra_management 2
+		u_set dhcp.lan.ra_default 1
+		u_set dhcp.lan.ignore 0
+		;;
+	esac
+
+	u_commit dhcp
 }
 
 mwan3_conf() {
@@ -456,6 +502,7 @@ apply() {
 	fi
 
 	ensure_firewall
+	ensure_ipv6
 	build_mwan3
 	ensure_sets
 

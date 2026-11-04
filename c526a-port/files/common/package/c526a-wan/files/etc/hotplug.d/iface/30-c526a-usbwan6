@@ -16,4 +16,9 @@ dev=$(uci -q get network.usbwan.device)
 [ -e "/proc/sys/net/ipv6/conf/$dev/accept_ra" ] || exit 0
 echo 2 > "/proc/sys/net/ipv6/conf/$dev/accept_ra" 2>/dev/null
 
+# odhcpd relay needs proxy NDP between the tether link and the LAN
+echo 1 > /proc/sys/net/ipv6/conf/all/proxy_ndp 2>/dev/null
+echo 1 > /proc/sys/net/ipv6/conf/br-lan/proxy_ndp 2>/dev/null
+echo 1 > "/proc/sys/net/ipv6/conf/$dev/proxy_ndp" 2>/dev/null
+
 exit 0
