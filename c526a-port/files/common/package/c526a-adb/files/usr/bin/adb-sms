@@ -8,6 +8,7 @@
 #
 . /lib/functions.sh
 . /usr/share/libubox/jshn.sh
+. /usr/lib/c526a-adb.sh
 
 STATE_DIR=/etc/adb-sms
 TMP_DIR=/tmp/adb-sms
@@ -15,14 +16,11 @@ mkdir -p "$STATE_DIR" "$TMP_DIR"
 
 log() { logger -t adb-sms -- "$*"; }
 
-safe_serial() {
-	printf '%s' "$1" | tr ':/' '__'
-}
-
 store_build() {
 	local serial="$1" safe="$2" max="$3"
 	local jsonl="$TMP_DIR/$safe.jsonl" store="$TMP_DIR/$safe.json"
 
+	serial=$(printf '%s' "$serial" | tr -d '"\\')
 	{
 		printf '{"device":"%s","messages":[' "$serial"
 		[ -s "$jsonl" ] && tail -n "$max" "$jsonl" | awk 'NR > 1 { printf "," } { printf "%s", $0 }'
@@ -52,6 +50,13 @@ poll_device() {
 	state="$STATE_DIR/$safe.state"
 	jsonl="$TMP_DIR/$safe.jsonl"
 	store="$TMP_DIR/$safe.json"
+
+	# The procd poller and the web UI's --once share these files.
+	exec 9>"$TMP_DIR/$safe.lock"
+	if ! flock 9; then
+		exec 9>&-
+		return 0
+	fi
 
 	# migrate the old single-device state/inbox on first run
 	[ -f "$state" ] || {
@@ -113,6 +118,7 @@ poll_device() {
 		tail -n "$max_store" "$jsonl" > "$jsonl.tmp" && mv "$jsonl.tmp" "$jsonl"
 	fi
 	store_build "$serial" "$safe" "$max_store"
+	exec 9>&-
 }
 
 adb_serials() {

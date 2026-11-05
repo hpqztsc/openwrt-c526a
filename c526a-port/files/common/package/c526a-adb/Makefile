@@ -44,6 +44,8 @@ define Package/c526a-adb/install
 	$(INSTALL_BIN) ./files/usr/bin/adb-sms $(1)/usr/bin/adb-sms
 	$(INSTALL_BIN) ./files/usr/bin/adb-ctl $(1)/usr/bin/adb-ctl
 	$(INSTALL_BIN) ./files/usr/bin/adb-term $(1)/usr/bin/adb-term
+	$(INSTALL_DIR) $(1)/usr/lib
+	$(INSTALL_DATA) ./files/usr/lib/c526a-adb.sh $(1)/usr/lib/c526a-adb.sh
 	$(INSTALL_DIR) $(1)/www/cgi-bin
 	$(INSTALL_BIN) ./files/www/cgi-bin/adb-sms $(1)/www/cgi-bin/adb-sms
 	$(INSTALL_BIN) ./files/www/cgi-bin/adb-api $(1)/www/cgi-bin/adb-api

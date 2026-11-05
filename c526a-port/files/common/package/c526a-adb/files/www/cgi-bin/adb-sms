@@ -5,6 +5,9 @@
 echo "Content-Type: application/json"
 echo
 
+. /usr/share/libubox/jshn.sh
+. /usr/lib/c526a-adb.sh
+
 token=$(uci -q get adb.sms.api_token)
 
 if [ -n "$token" ]; then
@@ -18,20 +21,20 @@ if [ -n "$token" ]; then
 	esac
 fi
 
-urldecode() {
-	printf '%b' "$(printf '%s' "$1" | sed 's/+/ /g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')"
-}
-
 device=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | sed -n 's/^device=//p' | head -n 1)
 [ -n "$device" ] && device=$(urldecode "$device")
 [ -n "$device" ] || device=$(uci -q get adb.sms.serial)
 
 if [ -n "$device" ]; then
-	safe=$(printf '%s' "$device" | tr ':/' '__')
+	safe=$(safe_serial "$device")
 	if [ -s "/tmp/adb-sms/$safe.json" ]; then
 		cat "/tmp/adb-sms/$safe.json"
 	else
-		printf '{"device":"%s","messages":[]}\n' "$device"
+		json_init
+		json_add_string device "$device"
+		json_add_array messages
+		json_close_array
+		json_dump
 	fi
 	exit 0
 fi

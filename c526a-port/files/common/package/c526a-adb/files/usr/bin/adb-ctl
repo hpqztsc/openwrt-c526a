@@ -6,6 +6,10 @@ SERIAL=${ADB_SERIAL:-}
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-s|--serial)
+		if [ $# -lt 2 ]; then
+			echo "adb-ctl: -s/--serial needs a device serial" >&2
+			exit 2
+		fi
 		SERIAL=$2
 		shift 2
 		;;

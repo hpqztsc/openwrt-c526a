@@ -7,12 +7,7 @@
 # must choose one, otherwise a "multiple devices" error is returned.
 #
 . /usr/share/libubox/jshn.sh
-
-urldecode() {
-	local s="$1"
-	s="${s//+/ }"
-	printf '%b' "${s//%/\\x}"
-}
+. /usr/lib/c526a-adb.sh
 
 get_param() {
 	local key="$1" pair
@@ -118,10 +113,6 @@ resolve_device() {
 	return 1
 }
 
-safe_serial() {
-	printf '%s' "$1" | tr ':/' '__'
-}
-
 # Run a content query as the shell UID, falling back to su only when the
 # provider denies it.  The query is passed as one argv: adb 1.0.32 keeps an
 # interactive shell alive when the command arrives on stdin.
@@ -173,22 +164,24 @@ if [ "$action" = "screenshot" ]; then
 		json_dump
 		exit 0
 	fi
-	rm -f /tmp/_adb_web.png
+	shot_local="/tmp/_adb_web.$$.png"
+	shot_remote="/data/local/tmp/_adb_web.$$.png"
+	rm -f "$shot_local"
 	# adb 1.0.32's exec-out lets screencap's "multiple displays" warning into
 	# the PNG stream, so always capture to a file and pull it.
-	adb -s "$DEV" shell screencap -p /data/local/tmp/_adb_web.png >/dev/null 2>&1
-	adb -s "$DEV" pull /data/local/tmp/_adb_web.png /tmp/_adb_web.png >/dev/null 2>&1
-	adb -s "$DEV" shell rm -f /data/local/tmp/_adb_web.png >/dev/null 2>&1
+	adb -s "$DEV" shell screencap -p "$shot_remote" >/dev/null 2>&1
+	adb -s "$DEV" pull "$shot_remote" "$shot_local" >/dev/null 2>&1
+	adb -s "$DEV" shell rm -f "$shot_remote" >/dev/null 2>&1
 	magic=""
-	[ -s /tmp/_adb_web.png ] && magic=$(head -c 8 /tmp/_adb_web.png | hexdump -v -e '1/1 "%02x"')
+	[ -s "$shot_local" ] && magic=$(head -c 8 "$shot_local" | hexdump -v -e '1/1 "%02x"')
 	if [ "$magic" = "89504e470d0a1a0a" ]; then
 		printf 'Content-Type: image/png\r\nCache-Control: no-store\r\n\r\n'
-		cat /tmp/_adb_web.png
+		cat "$shot_local"
 	else
 		printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
 		echo '{"error":"screenshot failed"}'
 	fi
-	rm -f /tmp/_adb_web.png
+	rm -f "$shot_local"
 	exit 0
 fi
 
@@ -211,12 +204,34 @@ if [ "$action" = "download" ]; then
 		echo '{"error":"not a regular file"}'
 		exit 0
 	fi
+	# Resolve symlinks on the phone; a link inside /sdcard must not escape it.
+	real=$(adb -s "$DEV" shell "readlink -f '$p' 2>/dev/null" 2>/dev/null | tr -d '\r')
+	root=$(adb -s "$DEV" shell "readlink -f /sdcard 2>/dev/null" 2>/dev/null | tr -d '\r')
+	[ -n "$root" ] || root=/sdcard
+	if [ -n "$real" ]; then
+		case "$real" in
+		"$root"|"$root"/*) ;;
+		*)
+			printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+			echo '{"error":"path escapes /sdcard"}'
+			exit 0
+			;;
+		esac
+	else
+		link=$(adb -s "$DEV" shell "[ -L '$p' ] && echo yes" 2>/dev/null)
+		if [ "$link" = "yes" ]; then
+			printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+			echo '{"error":"symlink download refused"}'
+			exit 0
+		fi
+	fi
 	printf 'Content-Type: application/octet-stream\r\n'
 	printf 'Content-Disposition: attachment; filename="download"\r\n'
 	printf 'Cache-Control: no-store\r\n\r\n'
 	# Stream instead of pulling to /tmp: recordings and videos can be large,
 	# and /tmp is RAM-backed on OpenWrt.  exec-out is binary clean for cat.
-	adb -s "$DEV" exec-out cat "$p" 2>/dev/null
+	# The remote path is single-quoted; valid_sdcard_path rejects "'".
+	adb -s "$DEV" exec-out cat "'$p'" 2>/dev/null
 	exit 0
 fi
 

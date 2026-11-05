@@ -5,19 +5,70 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ADB 控制台 - HiWiFi C526A</title>
 <style>
-:root { color-scheme: light dark; --bg:#f4f6f8; --card:#fff; --fg:#1f2328; --muted:#6b7280; --line:#d8dee4; --accent:#2563eb; --ok:#16a34a; --bad:#dc2626; }
-@media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --card:#171a21; --fg:#e6e6e6; --muted:#9aa4b2; --line:#2a2f3a; --accent:#60a5fa; --ok:#4ade80; --bad:#f87171; } }
+:root {
+  color-scheme: light dark;
+  --bg: #f4f6f8;
+  --card: #fff;
+  --fg: #1f2328;
+  --muted: #6b7280;
+  --line: #d8dee4;
+  --accent: #2563eb;
+  --ok: #16a34a;
+  --bad: #dc2626;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --fg: #e6e6e6;
+    --muted: #9aa4b2;
+    --line: #2a2f3a;
+    --accent: #60a5fa;
+    --ok: #4ade80;
+    --bad: #f87171;
+  }
+}
 * { box-sizing: border-box; }
-body { margin:0; font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
-header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--card); border-bottom:1px solid var(--line); }
+body {
+  margin: 0;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
 h1 { font-size:17px; margin:0; }
 .right { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
 .device { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:12px; }
 .device select { max-width:230px; }
 .token { display:flex; gap:6px; align-items:center; color:var(--muted); font-size:12px; }
 .token input { width:150px; }
-nav { display:flex; gap:6px; padding:10px 18px; background:var(--card); border-bottom:1px solid var(--line); overflow:auto; }
-nav button { border:1px solid var(--line); background:transparent; color:var(--fg); padding:6px 14px; border-radius:999px; cursor:pointer; white-space:nowrap; }
+nav {
+  display: flex;
+  gap: 6px;
+  padding: 10px 18px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  overflow: auto;
+}
+nav button {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
 nav button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
 main { padding:16px 18px 40px; max-width:1100px; margin:0 auto; }
 section { display:none; }
@@ -25,11 +76,31 @@ section.active { display:block; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px; }
 .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
 input, button, select { font:inherit; }
-input, select { padding:6px 9px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); }
-button { padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); cursor:pointer; }
+input, select {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--fg);
+}
+button {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+}
 button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
 button:disabled { opacity:.45; cursor:default; }
-pre, .out { background:rgba(127,127,127,.12); padding:10px; border-radius:8px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+pre, .out {
+  background: rgba(127, 127, 127, .12);
+  padding: 10px;
+  border-radius: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 table { width:100%; border-collapse:collapse; }
 th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
 th { color:var(--muted); font-weight:500; font-size:12px; }
@@ -80,7 +151,10 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
 <main>
   <section id="status" class="active">
     <div class="card">
-      <div class="row"><button class="primary" onclick="refresh()">刷新</button><span id="statusLine" class="muted">加载中…</span></div>
+      <div class="row">
+        <button class="primary" onclick="refresh()">刷新</button>
+        <span id="statusLine" class="muted">加载中…</span>
+      </div>
       <div id="statusBox"></div>
     </div>
   </section>
@@ -170,7 +244,10 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
 
   <section id="control">
     <div class="card">
-      <div class="row"><button class="primary" data-dev onclick="shot()">截屏</button><span class="muted">截图会显示在下方</span></div>
+      <div class="row">
+        <button class="primary" data-dev onclick="shot()">截屏</button>
+        <span class="muted">截图会显示在下方</span>
+      </div>
       <img id="shot" alt="" style="display:none">
     </div>
     <div class="card">
@@ -211,11 +288,15 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
         <button class="primary" data-dev onclick="openTerm()">打开 ADB 终端</button>
         <span id="termDevice" class="muted"></span>
       </div>
-      <p class="muted">在新标签页打开 ttyd 交互式终端，登录用户名 adb，密码见 /root/adb-term-password。</p>
+      <p class="muted">
+        在新标签页打开 ttyd 交互式终端，登录用户名 adb，
+        密码见 /root/adb-term-password。
+      </p>
     </div>
   </section>
 </main>
 <script>
+
 const $ = s => document.querySelector(s);
 let token = localStorage.getItem('adbToken') || '';
 let devices = [];
@@ -223,21 +304,45 @@ let selected = localStorage.getItem('adbDevice') || '';
 $('#token').value = token;
 
 function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const value = s === null || s === undefined ? '' : s;
+  return String(value).replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[c]));
 }
-function authorized(d) { return d && d.state === 'device'; }
-function currentDevice() { return devices.find(d => d.serial === selected) || null; }
+
+function authorized(d) {
+  return Boolean(d) && d.state === 'device';
+}
+
+function currentDevice() {
+  return devices.find(d => (d.serial === selected)) || null;
+}
+
 function deviceLabel(d) {
   const name = d.model || d.product || d.device || d.serial;
   return name + ' · ' + d.serial;
 }
+
 function stateText(d) {
-  if (!d) return '未选择设备';
-  if (d.state === 'device') return '在线';
-  if (d.state === 'unauthorized') return '未授权';
-  if (d.state === 'offline') return '离线';
+  if (!d) {
+    return '未选择设备';
+  }
+  if (d.state === 'device') {
+    return '在线';
+  }
+  if (d.state === 'unauthorized') {
+    return '未授权';
+  }
+  if (d.state === 'offline') {
+    return '离线';
+  }
   return d.state || '未知';
 }
+
 function saveToken() {
   token = $('#token').value.trim();
   localStorage.setItem('adbToken', token);
@@ -245,77 +350,131 @@ function saveToken() {
 }
 
 async function api(action, params = {}, raw = false) {
-  const p = Object.assign({ action, token }, params);
-  const withDevice = ['screenshot','shell','input','sms','poll','contacts','calls',
-    'threads','notifications','files','download','system','apps','record'];
-  if (selected && withDevice.includes(action)) p.device = selected;
+  const p = Object.assign({action, token}, params);
+  const withDevice = [
+    'screenshot', 'shell', 'input', 'sms', 'poll', 'contacts', 'calls',
+    'threads', 'notifications', 'files', 'download', 'system', 'apps',
+    'record',
+  ];
+  if (selected && withDevice.includes(action)) {
+    p.device = selected;
+  }
   const q = new URLSearchParams(p);
-  const r = await fetch('/cgi-bin/adb-api?' + q.toString(), { cache: 'no-store' });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const r = await fetch('/cgi-bin/adb-api?' + q.toString(), {cache: 'no-store'});
+  if (!r.ok) {
+    throw new Error('HTTP ' + r.status);
+  }
   return raw ? r.blob() : r.json();
 }
 
 function updateDeviceHeader() {
   const sel = $('#devSel');
-  const list = devices.filter(authorized).sort((a, b) => String(a.serial).localeCompare(String(b.serial)));
+  const list = devices.filter(authorized).sort((a, b) => {
+    return String(a.serial).localeCompare(String(b.serial));
+  });
   const opts = [];
-  if (!list.length) opts.push('<option value="">无在线设备</option>');
-  else if (list.length > 1) opts.push('<option value="">请选择设备</option>');
-  for (const d of list) {
-    opts.push('<option value="' + esc(d.serial) + '">' + esc(deviceLabel(d)) +
-      '（' + esc(stateText(d)) + '）</option>');
+  if (!list.length) {
+    opts.push('<option value="">无在线设备</option>');
+  } else if (list.length > 1) {
+    opts.push('<option value="">请选择设备</option>');
   }
-  if (document.activeElement !== sel) sel.innerHTML = opts.join('');
-  if (selected && list.some(d => d.serial === selected)) sel.value = selected;
-  else if (!selected) sel.value = '';
+  for (const d of list) {
+    opts.push('<option value="' + esc(d.serial) + '">'
+      + esc(deviceLabel(d)) + '（' + esc(stateText(d)) + '）</option>');
+  }
+  if (document.activeElement !== sel) {
+    sel.innerHTML = opts.join('');
+  }
+  if (selected && list.some(d => (d.serial === selected))) {
+    sel.value = selected;
+  } else if (!selected) {
+    sel.value = '';
+  }
   const d = currentDevice();
   if (!d) {
     $('#devMeta').innerHTML = '<span class="warn">未选择设备</span>';
   } else {
     const cls = authorized(d) ? 'up' : 'down';
-    $('#devMeta').innerHTML = '<span class="dot ' + cls + '"></span>' +
-      esc(stateText(d)) + (d.transport ? ' · transport ' + esc(d.transport) : '');
+    const transport = d.transport ? ' · transport ' + esc(d.transport) : '';
+    $('#devMeta').innerHTML = '<span class="dot ' + cls + '"></span>'
+      + esc(stateText(d)) + transport;
   }
-  document.querySelectorAll('[data-dev]').forEach(el => { el.disabled = !authorized(d); });
+  document.querySelectorAll('[data-dev]').forEach(el => {
+    el.disabled = !authorized(d);
+  });
   $('#termDevice').textContent = d ? deviceLabel(d) : '请先选择设备';
 }
 
-function selectDevice(serial) {
-  selected = serial || '';
-  if (selected) localStorage.setItem('adbDevice', selected);
-  else localStorage.removeItem('adbDevice');
-  updateDeviceHeader();
+function reloadActiveTab() {
   const active = document.querySelector('section.active');
   const loaders = {
     status: refresh,
     sms: loadSms,
-    comms: () => { loadContacts(); loadCalls(); },
+    comms: () => {
+      loadContacts();
+      loadCalls();
+    },
     notifications: loadNotifications,
-    files: () => loadFiles(filePath),
-    system: () => { loadSystem(); loadApps(); }
+    files: () => {
+      loadFiles(filePath);
+    },
+    system: () => {
+      loadSystem();
+      loadApps();
+    },
   };
-  if (active && loaders[active.id]) loaders[active.id]();
+  if (active && loaders[active.id]) {
+    loaders[active.id]();
+  }
+}
+
+function selectDevice(serial) {
+  selected = serial || '';
+  if (selected) {
+    localStorage.setItem('adbDevice', selected);
+  } else {
+    localStorage.removeItem('adbDevice');
+  }
+  updateDeviceHeader();
+  reloadActiveTab();
 }
 
 async function loadDevices() {
   try {
+    const previous = selected;
     const d = await api('devices');
     devices = d.devices || [];
     const auth = devices.filter(authorized);
-    const online = serial => devices.some(x => x.serial === serial && authorized(x));
-    // Keep a selection only while that device is actually usable.
-    if (selected && !online(selected)) selected = '';
+    const online = serial => devices.some(x => {
+      return x.serial === serial && authorized(x);
+    });
+    if (selected && !online(selected)) {
+      selected = '';
+    }
     if (!selected) {
       const stored = localStorage.getItem('adbDevice') || '';
-      if (stored && online(stored)) selected = stored;
+      if (stored && online(stored)) {
+        selected = stored;
+      }
     }
-    if (!selected && auth.length === 1) selected = auth[0].serial;
-    if (selected) localStorage.setItem('adbDevice', selected);
-    else localStorage.removeItem('adbDevice');
+    if (!selected && auth.length === 1) {
+      selected = auth[0].serial;
+    }
+    if (selected) {
+      localStorage.setItem('adbDevice', selected);
+    } else {
+      localStorage.removeItem('adbDevice');
+    }
     updateDeviceHeader();
     renderDevices();
-    const active = document.querySelector('section.active');
-    if (active && active.id === 'status') refresh();
+    if (previous !== selected) {
+      reloadActiveTab();
+    } else {
+      const active = document.querySelector('section.active');
+      if (active && active.id === 'status') {
+        refresh();
+      }
+    }
     return devices;
   } catch (e) {
     $('#devicesBox').textContent = '请求失败：' + e.message + '（检查 Token）';
@@ -326,59 +485,82 @@ async function loadDevices() {
 function renderDevices() {
   const box = $('#devicesBox');
   if (!devices.length) {
-    box.innerHTML = '<span class="muted">没有设备。USB 请先在手机上允许调试；网络设备用上方“网络连接”。</span>';
+    box.innerHTML = '<span class="muted">没有设备。USB 请先在手机上允许调试；'
+      + '网络设备用上方“网络连接”。</span>';
     return;
   }
-  box.innerHTML = '<table><tr><th>设备</th><th>型号</th><th>状态</th><th>传输</th><th>操作</th></tr>' +
-    devices.map(d => {
-      const isNet = String(d.serial).includes(':');
-      const canUse = authorized(d);
-      return '<tr><td>' + esc(d.serial) + '</td><td>' + esc(d.model || d.product || '-') +
-        '</td><td>' + esc(stateText(d)) + '</td><td>' + esc(d.transport || (isNet ? 'tcp' : 'usb')) +
-        '</td><td>' +
-        (canUse ? '<button data-serial="' + esc(d.serial) + '" onclick="selectDevice(this.dataset.serial)">使用</button> ' : '<span class="muted">不可用</span> ') +
-        (isNet ? '<button data-serial="' + esc(d.serial) + '" onclick="disconnectDevice(this.dataset.serial)">断开</button>' : '') +
-        '</td></tr>';
-    }).join('') + '</table>';
+  const rows = devices.map(d => {
+    const isNet = String(d.serial).includes(':');
+    const canUse = authorized(d);
+    const model = esc(d.model || d.product || '-');
+    const transport = esc(d.transport || (isNet ? 'tcp' : 'usb'));
+    const action = canUse
+      ? '<button data-serial="' + esc(d.serial) + '" '
+        + 'onclick="selectDevice(this.dataset.serial)">使用</button> '
+      : '<span class="muted">不可用</span> ';
+    const disconnect = isNet
+      ? '<button data-serial="' + esc(d.serial) + '" '
+        + 'onclick="disconnectDevice(this.dataset.serial)">断开</button>'
+      : '';
+    return '<tr><td>' + esc(d.serial) + '</td><td>' + model
+      + '</td><td>' + esc(stateText(d)) + '</td><td>' + transport
+      + '</td><td>' + action + disconnect + '</td></tr>';
+  });
+  box.innerHTML = '<table><tr><th>设备</th><th>型号</th><th>状态</th>'
+    + '<th>传输</th><th>操作</th></tr>' + rows.join('') + '</table>';
 }
 
 async function connectHost() {
   const host = $('#host').value.trim();
-  if (!host) return;
+  if (!host) {
+    return;
+  }
   try {
-    const d = await api('connect', { host });
+    const d = await api('connect', {host});
     const out = d.output || d.error || '完成';
     alert(out);
     const m = out.match(/connected to ([^ ]+)/i);
     await loadDevices();
-    if (m && devices.some(x => x.serial === m[1])) selectDevice(m[1]);
-  } catch (e) { alert('连接失败：' + e.message); }
+    if (m && devices.some(x => (x.serial === m[1]))) {
+      selectDevice(m[1]);
+    }
+  } catch (e) {
+    alert('连接失败：' + e.message);
+  }
 }
 
 async function disconnectDevice(serial) {
   try {
-    const d = await api('disconnect', { host: serial });
+    const d = await api('disconnect', {host: serial});
     alert(d.output || d.error || '完成');
-    if (selected === serial) selectDevice('');
+    if (selected === serial) {
+      selectDevice('');
+    }
     await loadDevices();
-  } catch (e) { alert('断开失败：' + e.message); }
+  } catch (e) {
+    alert('断开失败：' + e.message);
+  }
 }
 
 async function refresh() {
   try {
     const d = await api('status');
     const n = (d.devices || []).length;
-    $('#statusLine').textContent = '服务：' + (d.server === 'running' ? '运行中' : '已停止') +
-      '，设备：' + n + (d.auth ? '，Token 已启用' : '，未设置 Token');
+    $('#statusLine').textContent = '服务：'
+      + (d.server === 'running' ? '运行中' : '已停止')
+      + '，设备：' + n + (d.auth ? '，Token 已启用' : '，未设置 Token');
     const cur = currentDevice();
     let html = '';
     if (cur) {
-      html += '<div class="row"><span class="dot ' + (authorized(cur) ? 'up' : 'down') + '"></span>' +
-        '<b>' + esc(deviceLabel(cur)) + '</b><span class="muted">' + esc(stateText(cur)) + '</span></div>';
+      const cls = authorized(cur) ? 'up' : 'down';
+      html += '<div class="row"><span class="dot ' + cls + '"></span>'
+        + '<b>' + esc(deviceLabel(cur)) + '</b>'
+        + '<span class="muted">' + esc(stateText(cur)) + '</span></div>';
     } else if (devices.filter(authorized).length) {
       html += '<p class="warn">有多台在线设备，请在顶部选择要操作的目标设备。</p>';
     } else {
-      html += '<p class="warn">没有在线设备。USB 连接请在手机上允许调试；网络设备请在“设备”页连接。</p>';
+      html += '<p class="warn">没有在线设备。USB 连接请在手机上允许调试；'
+        + '网络设备请在“设备”页连接。</p>';
     }
     $('#statusBox').innerHTML = html;
   } catch (e) {
@@ -388,52 +570,93 @@ async function refresh() {
 
 async function loadSms() {
   const d = currentDevice();
-  if (!authorized(d)) { $('#smsBox').textContent = '请先选择在线设备'; $('#smsCount').textContent = ''; return; }
+  if (!authorized(d)) {
+    $('#smsBox').textContent = '请先选择在线设备';
+    $('#smsCount').textContent = '';
+    return;
+  }
+  const want = selected;
   try {
     const r = await api('sms');
+    if (want !== selected) {
+      return;
+    }
     renderSms(r);
-  } catch (e) { $('#smsBox').textContent = '请求失败：' + e.message; }
+  } catch (e) {
+    $('#smsBox').textContent = '请求失败：' + e.message;
+  }
 }
 
 async function pollSms() {
   const d = currentDevice();
-  if (!authorized(d)) { $('#smsBox').textContent = '请先选择在线设备'; return; }
+  if (!authorized(d)) {
+    $('#smsBox').textContent = '请先选择在线设备';
+    return;
+  }
+  const want = selected;
   try {
     const r = await api('poll');
+    if (want !== selected) {
+      return;
+    }
     renderSms(r);
-  } catch (e) { $('#smsBox').textContent = '请求失败：' + e.message; }
+  } catch (e) {
+    $('#smsBox').textContent = '请求失败：' + e.message;
+  }
 }
 
 function renderSms(d) {
-  if (d.error) { $('#smsBox').textContent = d.error; return; }
+  if (d.error) {
+    $('#smsBox').textContent = d.error;
+    return;
+  }
   const msgs = (d.messages || []).slice().reverse();
-  $('#smsCount').textContent = '设备 ' + (d.device || selected) + '，共 ' + msgs.length + ' 条';
+  $('#smsCount').textContent = '设备 ' + (d.device || selected)
+    + '，共 ' + msgs.length + ' 条';
   $('#smsBox').innerHTML = msgs.length
     ? msgs.map(m => {
         const t = m.date ? new Date(Number(m.date)).toLocaleString('zh-CN') : '';
-        return '<div class="msg"><div class="meta">' + esc(m.address) + ' · ' + esc(t) + ' · #' + esc(m.id) + '</div><div>' + esc(m.body) + '</div></div>';
+        return '<div class="msg"><div class="meta">' + esc(m.address)
+          + ' · ' + esc(t) + ' · #' + esc(m.id) + '</div><div>'
+          + esc(m.body) + '</div></div>';
       }).join('')
-    : '<span class="muted">没有短信。确认 ADB 已连接；部分 ROM 需要 root 才能读取短信。</span>';
+    : '<span class="muted">没有短信。确认 ADB 已连接；'
+      + '部分 ROM 需要 root 才能读取短信。</span>';
 }
 
 async function loadThreads() {
-  if (!authorized(currentDevice())) { $('#smsBox').textContent = '请先选择在线设备'; $('#smsCount').textContent = ''; return; }
+  if (!authorized(currentDevice())) {
+    $('#smsBox').textContent = '请先选择在线设备';
+    $('#smsCount').textContent = '';
+    return;
+  }
+  const want = selected;
   $('#smsBox').textContent = '加载中…';
   try {
     const d = await api('threads');
+    if (want !== selected) {
+      return;
+    }
     renderThreads(d);
-  } catch (e) { $('#smsBox').textContent = '请求失败：' + e.message; }
+  } catch (e) {
+    $('#smsBox').textContent = '请求失败：' + e.message;
+  }
 }
 
 function renderThreads(d) {
-  if (d.error) { $('#smsBox').textContent = d.error; return; }
+  if (d.error) {
+    $('#smsBox').textContent = d.error;
+    return;
+  }
   const list = d.threads || [];
   $('#smsCount').textContent = '会话 / MMS：' + list.length + ' 条';
   $('#smsBox').innerHTML = list.length
     ? list.map(t => {
-        const flags = (t.type === '1' ? '收件' : '发送') + ' · ' + (t.read === '0' ? '未读' : '已读');
-        return '<div class="msg"><div class="meta">' + esc(t.address) + ' · ' + esc(fmtDate(t.date)) +
-          ' · ' + esc(flags) + '</div><div>' + esc(t.body) + '</div></div>';
+        const kind = t.type === '1' ? '收件' : '发送';
+        const flags = kind + ' · ' + (t.read === '0' ? '未读' : '已读');
+        return '<div class="msg"><div class="meta">' + esc(t.address)
+          + ' · ' + esc(fmtDate(t.date)) + ' · ' + esc(flags)
+          + '</div><div>' + esc(t.body) + '</div></div>';
       }).join('')
     : '<span class="muted">没有会话记录。</span>';
 }
@@ -441,78 +664,138 @@ function renderThreads(d) {
 let contactsData = [];
 
 async function loadContacts() {
-  if (!authorized(currentDevice())) { $('#contactsBox').textContent = '请先选择在线设备'; return; }
+  if (!authorized(currentDevice())) {
+    $('#contactsBox').textContent = '请先选择在线设备';
+    return;
+  }
+  const want = selected;
   $('#contactsBox').textContent = '加载中…';
   try {
     const d = await api('contacts');
+    if (want !== selected) {
+      return;
+    }
     contactsData = d.contacts || [];
     renderContacts();
-  } catch (e) { $('#contactsBox').textContent = '请求失败：' + e.message; }
+  } catch (e) {
+    $('#contactsBox').textContent = '请求失败：' + e.message;
+  }
 }
 
 function renderContacts() {
   const q = ($('#contactFilter').value || '').trim().toLowerCase();
-  const list = contactsData.filter(c => !q ||
-    String(c.name).toLowerCase().includes(q) || String(c.number).toLowerCase().includes(q));
-  $('#contactCount').textContent = q ? '匹配 ' + list.length + ' / ' + contactsData.length : '共 ' + contactsData.length + ' 条';
+  const list = contactsData.filter(c => {
+    return !q
+      || String(c.name).toLowerCase().includes(q)
+      || String(c.number).toLowerCase().includes(q);
+  });
+  const count = '共 ' + contactsData.length + ' 条';
+  $('#contactCount').textContent = q
+    ? '匹配 ' + list.length + ' / ' + contactsData.length
+    : count;
   $('#contactsBox').innerHTML = list.length
-    ? '<table><tr><th>姓名</th><th>号码</th></tr>' + list.map(c =>
-        '<tr><td>' + esc(c.name || '(未命名)') + '</td><td>' + esc(c.number || '-') + '</td></tr>').join('') + '</table>'
+    ? '<table><tr><th>姓名</th><th>号码</th></tr>'
+      + list.map(c => {
+          return '<tr><td>' + esc(c.name || '(未命名)') + '</td><td>'
+            + esc(c.number || '-') + '</td></tr>';
+        }).join('') + '</table>'
     : '<span class="muted">没有匹配的联系人。</span>';
 }
 
 async function loadCalls() {
-  if (!authorized(currentDevice())) { $('#callsBox').textContent = '请先选择在线设备'; return; }
+  if (!authorized(currentDevice())) {
+    $('#callsBox').textContent = '请先选择在线设备';
+    return;
+  }
+  const want = selected;
   $('#callsBox').textContent = '加载中…';
   try {
     const d = await api('calls');
+    if (want !== selected) {
+      return;
+    }
     renderCalls(d);
-  } catch (e) { $('#callsBox').textContent = '请求失败：' + e.message; }
+  } catch (e) {
+    $('#callsBox').textContent = '请求失败：' + e.message;
+  }
 }
 
 function callType(t) {
-  return ({'1':'来电','2':'呼出','3':'未接','4':'语音信箱','5':'拒接','6':'拦截','7':'外部接听'})[t] || ('类型 ' + t);
+  const types = {
+    '1': '来电',
+    '2': '呼出',
+    '3': '未接',
+    '4': '语音信箱',
+    '5': '拒接',
+    '6': '拦截',
+    '7': '外部接听',
+  };
+  return types[t] || ('类型 ' + t);
 }
 
 function renderCalls(d) {
-  if (d.error) { $('#callsBox').textContent = d.error; return; }
+  if (d.error) {
+    $('#callsBox').textContent = d.error;
+    return;
+  }
   const list = d.calls || [];
   $('#callCount').textContent = '最近 ' + list.length + ' 条';
   $('#callsBox').innerHTML = list.length
-    ? '<table><tr><th>类型</th><th>联系人 / 号码</th><th>时间</th><th>时长</th><th>归属地</th></tr>' +
-      list.map(c => {
-        const who = c.name ? esc(c.name) + '<br><span class="muted">' + esc(c.number) + '</span>' : esc(c.number || '-');
-        const dur = Number(c.duration) ? fmtDuration(c.duration) : '-';
-        return '<tr><td>' + esc(callType(c.type)) + '</td><td>' + who + '</td><td>' +
-          esc(fmtDate(c.date)) + '</td><td>' + esc(dur) + '</td><td>' + esc(c.location || '-') + '</td></tr>';
-      }).join('') + '</table>'
+    ? '<table><tr><th>类型</th><th>联系人 / 号码</th><th>时间</th>'
+      + '<th>时长</th><th>归属地</th></tr>'
+      + list.map(c => {
+          const who = c.name
+            ? esc(c.name) + '<br><span class="muted">' + esc(c.number) + '</span>'
+            : esc(c.number || '-');
+          const dur = Number(c.duration) ? fmtDuration(c.duration) : '-';
+          return '<tr><td>' + esc(callType(c.type)) + '</td><td>' + who
+            + '</td><td>' + esc(fmtDate(c.date)) + '</td><td>' + esc(dur)
+            + '</td><td>' + esc(c.location || '-') + '</td></tr>';
+        }).join('') + '</table>'
     : '<span class="muted">没有通话记录。</span>';
 }
 
 async function loadNotifications() {
-  if (!authorized(currentDevice())) { $('#notifBox').textContent = '请先选择在线设备'; return; }
+  if (!authorized(currentDevice())) {
+    $('#notifBox').textContent = '请先选择在线设备';
+    return;
+  }
+  const want = selected;
   $('#notifBox').textContent = '加载中…';
   try {
     const d = await api('notifications');
+    if (want !== selected) {
+      return;
+    }
     renderNotifications(d);
-  } catch (e) { $('#notifBox').textContent = '请求失败：' + e.message; }
+  } catch (e) {
+    $('#notifBox').textContent = '请求失败：' + e.message;
+  }
 }
 
 function renderNotifications(d) {
-  if (d.error) { $('#notifBox').textContent = d.error; return; }
+  if (d.error) {
+    $('#notifBox').textContent = d.error;
+    return;
+  }
   const list = d.notifications || [];
   $('#notifCount').textContent = '共 ' + list.length + ' 条';
   $('#notifBox').innerHTML = list.length
-    ? list.map(n =>
-        '<div class="msg"><div class="meta">' + esc(n.package || '未知应用') + '</div>' +
-        '<div><b>' + esc(n.title || '') + '</b></div><div>' + esc(n.text || '') + '</div></div>').join('')
+    ? list.map(n => {
+        return '<div class="msg"><div class="meta">'
+          + esc(n.package || '未知应用') + '</div><div><b>'
+          + esc(n.title || '') + '</b></div><div>'
+          + esc(n.text || '') + '</div></div>';
+      }).join('')
     : '<span class="muted">没有可读通知。</span>';
 }
 
 let filePath = '/sdcard';
 
 function parentPath() {
-  if (!filePath || filePath === '/sdcard') return '/sdcard';
+  if (!filePath || filePath === '/sdcard') {
+    return '/sdcard';
+  }
   const i = filePath.lastIndexOf('/');
   return i <= 0 ? '/sdcard' : filePath.slice(0, i);
 }
@@ -522,35 +805,54 @@ function joinPath(name) {
 }
 
 async function loadFiles(path) {
-  if (!authorized(currentDevice())) { $('#fileBox').textContent = '请先选择在线设备'; return; }
+  if (!authorized(currentDevice())) {
+    $('#fileBox').textContent = '请先选择在线设备';
+    return;
+  }
+  const want = selected;
   $('#fileBox').textContent = '加载中…';
   try {
-    const d = await api('files', { path: path || '/sdcard' });
-    if (d.error) { $('#fileBox').textContent = d.error; return; }
+    const d = await api('files', {path: path || '/sdcard'});
+    if (want !== selected) {
+      return;
+    }
+    if (d.error) {
+      $('#fileBox').textContent = d.error;
+      return;
+    }
     filePath = d.path || '/sdcard';
     $('#filePath').value = filePath;
     renderFiles(d.entries || []);
-  } catch (e) { $('#fileBox').textContent = '请求失败：' + e.message; }
+  } catch (e) {
+    $('#fileBox').textContent = '请求失败：' + e.message;
+  }
 }
 
 function renderFiles(entries) {
-  entries.sort((a, b) => (b.dir - a.dir) || String(a.name).localeCompare(String(b.name), 'zh-CN'));
+  entries.sort((a, b) => {
+    return (b.dir - a.dir) || String(a.name).localeCompare(String(b.name), 'zh-CN');
+  });
   $('#fileBox').innerHTML = entries.length
-    ? '<table><tr><th>名称</th><th>类型</th><th>操作</th></tr>' + entries.map(e => {
-        const icon = e.dir ? '目录' : '文件';
-        const action = e.dir
-          ? '<button data-name="' + esc(e.name) + '" onclick="loadFiles(joinPath(this.dataset.name))">打开</button>'
-          : '<button data-name="' + esc(e.name) + '" onclick="downloadFile(this.dataset.name)">下载</button>';
-        return '<tr><td>' + esc(e.name) + '</td><td>' + icon + '</td><td>' + action + '</td></tr>';
-      }).join('') + '</table>'
+    ? '<table><tr><th>名称</th><th>类型</th><th>操作</th></tr>'
+      + entries.map(e => {
+          const icon = e.dir ? '目录' : '文件';
+          const action = e.dir
+            ? '<button data-name="' + esc(e.name) + '" '
+              + 'onclick="loadFiles(joinPath(this.dataset.name))">打开</button>'
+            : '<button data-name="' + esc(e.name) + '" '
+              + 'onclick="downloadFile(this.dataset.name)">下载</button>';
+          return '<tr><td>' + esc(e.name) + '</td><td>' + icon
+            + '</td><td>' + action + '</td></tr>';
+        }).join('') + '</table>'
     : '<span class="muted">目录为空或无法读取。</span>';
 }
 
 async function downloadPath(path, name) {
   try {
-    const b = await api('download', { path }, true);
+    const b = await api('download', {path}, true);
     if (b.type === 'application/json') {
-      alert('下载失败：' + (JSON.parse(await b.text()).error || '未知错误'));
+      const j = JSON.parse(await b.text());
+      alert('下载失败：' + (j.error || '未知错误'));
       return;
     }
     const u = URL.createObjectURL(b);
@@ -560,8 +862,12 @@ async function downloadPath(path, name) {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(u), 2000);
-  } catch (e) { alert('下载失败：' + e.message); }
+    setTimeout(() => {
+      URL.revokeObjectURL(u);
+    }, 2000);
+  } catch (e) {
+    alert('下载失败：' + e.message);
+  }
 }
 
 function downloadFile(name) {
@@ -569,67 +875,124 @@ function downloadFile(name) {
 }
 
 async function loadSystem() {
-  if (!authorized(currentDevice())) { $('#systemBox').textContent = '请先选择在线设备'; return; }
+  if (!authorized(currentDevice())) {
+    $('#systemBox').textContent = '请先选择在线设备';
+    return;
+  }
+  const want = selected;
   $('#systemBox').textContent = '加载中…';
   try {
     const d = await api('system');
+    if (want !== selected) {
+      return;
+    }
     renderSystem(d);
-  } catch (e) { $('#systemBox').textContent = '请求失败：' + e.message; }
+  } catch (e) {
+    $('#systemBox').textContent = '请求失败：' + e.message;
+  }
 }
 
 function renderSystem(d) {
-  if (d.error) { $('#systemBox').textContent = d.error; return; }
-  const kv = (k, v) => '<div class="kv"><b>' + esc(k) + '</b>' + esc(v == null || v === '' ? '-' : v) + '</div>';
-  const status = ({'1':'未知','2':'充电中','3':'放电中','4':'未充电','5':'已充满'})[d.battery_status] || d.battery_status || '-';
-  const temp = d.battery_temp ? (Number(d.battery_temp) / 10).toFixed(1) + ' °C' : '-';
-  const volt = d.battery_voltage ? (Number(d.battery_voltage) / 1000).toFixed(2) + ' V' : '-';
-  const signal = d.signal_level === '' || d.signal_level == null ? '-' : d.signal_level + ' / 4';
-  const storage = d.storage_total ? fmtKb(d.storage_used) + ' / ' + fmtKb(d.storage_total) : '-';
-  $('#systemLine').textContent = (d.model || '') + (d.android ? ' · Android ' + d.android : '');
-  $('#systemBox').innerHTML = '<div class="grid">' +
-    kv('型号', d.model) + kv('厂商', d.manufacturer) + kv('Android', d.android) +
-    kv('SDK', d.sdk) + kv('主机名', d.hostname) + kv('时区', d.timezone) +
-    kv('运营商', d.operator) + kv('信号', signal) +
-    kv('电量', d.battery_level ? d.battery_level + '%' : '-') + kv('电池状态', status) +
-    kv('电池温度', temp) + kv('电池电压', volt) +
-    kv('存储（已用/总量）', storage) + kv('可用空间', d.storage_avail ? fmtKb(d.storage_avail) : '-') +
-    kv('运行时间', d.uptime ? fmtUptime(d.uptime) : '-') +
-    '</div>';
+  if (d.error) {
+    $('#systemBox').textContent = d.error;
+    return;
+  }
+  const kv = (k, v) => {
+    const value = v === null || v === undefined || v === '' ? '-' : v;
+    return '<div class="kv"><b>' + esc(k) + '</b>' + esc(value) + '</div>';
+  };
+  const statuses = {
+    '1': '未知',
+    '2': '充电中',
+    '3': '放电中',
+    '4': '未充电',
+    '5': '已充满',
+  };
+  const status = statuses[d.battery_status] || d.battery_status || '-';
+  const temp = d.battery_temp
+    ? (Number(d.battery_temp) / 10).toFixed(1) + ' °C'
+    : '-';
+  const volt = d.battery_voltage
+    ? (Number(d.battery_voltage) / 1000).toFixed(2) + ' V'
+    : '-';
+  const noSignal = d.signal_level === null || d.signal_level === undefined;
+  const signal = noSignal || d.signal_level === '' ? '-' : d.signal_level + ' / 4';
+  const storage = d.storage_total
+    ? fmtKb(d.storage_used) + ' / ' + fmtKb(d.storage_total)
+    : '-';
+  $('#systemLine').textContent = (d.model || '')
+    + (d.android ? ' · Android ' + d.android : '');
+  $('#systemBox').innerHTML = '<div class="grid">'
+    + kv('型号', d.model) + kv('厂商', d.manufacturer)
+    + kv('Android', d.android) + kv('SDK', d.sdk)
+    + kv('主机名', d.hostname) + kv('时区', d.timezone)
+    + kv('运营商', d.operator) + kv('信号', signal)
+    + kv('电量', d.battery_level ? d.battery_level + '%' : '-')
+    + kv('电池状态', status) + kv('电池温度', temp)
+    + kv('电池电压', volt) + kv('存储（已用/总量）', storage)
+    + kv('可用空间', d.storage_avail ? fmtKb(d.storage_avail) : '-')
+    + kv('运行时间', d.uptime ? fmtUptime(d.uptime) : '-')
+    + '</div>';
 }
 
 let appsData = [];
 
 async function loadApps() {
-  if (!authorized(currentDevice())) { $('#appsBox').textContent = '请先选择在线设备'; return; }
+  if (!authorized(currentDevice())) {
+    $('#appsBox').textContent = '请先选择在线设备';
+    return;
+  }
+  const want = selected;
   $('#appsBox').textContent = '加载中…';
   try {
     const d = await api('apps');
+    if (want !== selected) {
+      return;
+    }
     appsData = (d.apps || []).map(a => a.package);
-    $('#appCount').textContent = '用户应用 ' + (d.count || 0) + ' / 全部 ' + (d.total || 0);
+    $('#appCount').textContent = '用户应用 ' + (d.count || 0)
+      + ' / 全部 ' + (d.total || 0);
     renderApps();
-  } catch (e) { $('#appsBox').textContent = '请求失败：' + e.message; }
+  } catch (e) {
+    $('#appsBox').textContent = '请求失败：' + e.message;
+  }
 }
 
 function renderApps() {
   const q = ($('#appFilter').value || '').trim().toLowerCase();
-  const list = appsData.filter(p => !q || p.toLowerCase().includes(q));
+  const list = appsData.filter(p => {
+    return !q || p.toLowerCase().includes(q);
+  });
   $('#appsBox').innerHTML = list.length
-    ? list.map(p => '<span class="chip">' + esc(p) + '</span>').join('')
+    ? list.map(p => {
+        return '<span class="chip">' + esc(p) + '</span>';
+      }).join('')
     : '<span class="muted">没有匹配的应用。</span>';
 }
 
 async function recordScreen() {
-  if (!authorized(currentDevice())) { alert('请先选择在线设备'); return; }
+  if (!authorized(currentDevice())) {
+    alert('请先选择在线设备');
+    return;
+  }
   $('#recStatus').textContent = '录制中…（10 秒，手机屏幕会被点亮）';
   $('#recBox').innerHTML = '';
   try {
-    const d = await api('record', { seconds: 10 });
-    if (d.error) { $('#recStatus').textContent = d.error; return; }
+    const d = await api('record', {seconds: 10});
+    if (d.error) {
+      $('#recStatus').textContent = d.error;
+      return;
+    }
     $('#recStatus').textContent = '录制完成';
-    $('#recBox').innerHTML = '<div class="row"><span class="muted">' + esc(d.path) + ' · ' + fmtBytes(d.size) +
-      '</span><button class="primary" data-path="' + esc(d.path) +
-      '" data-name="recording.mp4" onclick="downloadPath(this.dataset.path,this.dataset.name)">下载录屏</button></div>';
-  } catch (e) { $('#recStatus').textContent = '录制失败：' + e.message; }
+    $('#recBox').innerHTML = '<div class="row"><span class="muted">'
+      + esc(d.path) + ' · ' + fmtBytes(d.size) + '</span>'
+      + '<button class="primary" data-path="' + esc(d.path) + '" '
+      + 'data-name="recording.mp4" '
+      + 'onclick="downloadPath(this.dataset.path,this.dataset.name)">'
+      + '下载录屏</button></div>';
+  } catch (e) {
+    $('#recStatus').textContent = '录制失败：' + e.message;
+  }
 }
 
 function fmtDate(ms) {
@@ -637,88 +1000,170 @@ function fmtDate(ms) {
 }
 
 function fmtDuration(sec) {
-  sec = Number(sec) || 0;
-  const m = Math.floor(sec / 60), s = sec % 60;
+  const total = Number(sec) || 0;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
   return m ? m + ' 分 ' + s + ' 秒' : s + ' 秒';
 }
 
 function fmtKb(kb) {
   const n = Number(kb);
-  if (!n) return '-';
-  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' GB';
-  if (n >= 1024) return (n / 1024).toFixed(1) + ' MB';
+  if (!n) {
+    return '-';
+  }
+  if (n >= 1048576) {
+    return (n / 1048576).toFixed(1) + ' GB';
+  }
+  if (n >= 1024) {
+    return (n / 1024).toFixed(1) + ' MB';
+  }
   return n + ' KB';
 }
 
 function fmtBytes(n) {
-  n = Number(n) || 0;
-  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
-  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
-  return n + ' B';
+  const value = Number(n) || 0;
+  if (value >= 1048576) {
+    return (value / 1048576).toFixed(1) + ' MB';
+  }
+  if (value >= 1024) {
+    return (value / 1024).toFixed(1) + ' KB';
+  }
+  return value + ' B';
 }
 
 function fmtUptime(sec) {
-  sec = Number(sec) || 0;
-  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+  const total = Number(sec) || 0;
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
   return (d ? d + ' 天 ' : '') + h + ' 小时 ' + m + ' 分';
 }
 
 async function shot() {
-  if (!authorized(currentDevice())) { alert('请先选择在线设备'); return; }
+  if (!authorized(currentDevice())) {
+    alert('请先选择在线设备');
+    return;
+  }
   try {
     const b = await api('screenshot', {}, true);
     if (b.type === 'application/json') {
-      alert('截屏失败：' + (JSON.parse(await b.text()).error || '未知错误'));
+      const j = JSON.parse(await b.text());
+      alert('截屏失败：' + (j.error || '未知错误'));
       return;
     }
     const img = $('#shot');
-    if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
+    if (img.dataset.url) {
+      URL.revokeObjectURL(img.dataset.url);
+    }
     const u = URL.createObjectURL(b);
-    img.dataset.url = u; img.src = u; img.style.display = 'block';
-  } catch (e) { alert('截屏失败：' + e.message); }
+    img.dataset.url = u;
+    img.src = u;
+    img.style.display = 'block';
+  } catch (e) {
+    alert('截屏失败：' + e.message);
+  }
 }
 
-async function tapXY() { await api('input', { type: 'tap', x: $('#tx').value, y: $('#ty').value }); }
-async function swipeXY() { await api('input', { type: 'swipe', x: $('#tx').value, y: $('#ty').value, x2: $('#tx2').value, y2: $('#ty2').value }); }
-async function sendText() { await api('input', { type: 'text', text: $('#text').value }); }
-async function sendKey() { await api('input', { type: 'key', key: $('#key').value }); }
+async function tapXY() {
+  await api('input', {type: 'tap', x: $('#tx').value, y: $('#ty').value});
+}
+
+async function swipeXY() {
+  await api('input', {
+    type: 'swipe',
+    x: $('#tx').value,
+    y: $('#ty').value,
+    x2: $('#tx2').value,
+    y2: $('#ty2').value,
+  });
+}
+
+async function sendText() {
+  await api('input', {type: 'text', text: $('#text').value});
+}
+
+async function sendKey() {
+  await api('input', {type: 'key', key: $('#key').value});
+}
+
 async function runShell() {
   const cmd = $('#cmd').value.trim();
-  if (!cmd) return;
-  if (!authorized(currentDevice())) { $('#shellOut').textContent = '请先选择在线设备'; return; }
+  if (!cmd) {
+    return;
+  }
+  if (!authorized(currentDevice())) {
+    $('#shellOut').textContent = '请先选择在线设备';
+    return;
+  }
   $('#shellOut').textContent = '执行中…';
   try {
-    const d = await api('shell', { cmd });
+    const d = await api('shell', {cmd});
     $('#shellOut').textContent = d.output || d.error || '';
-  } catch (e) { $('#shellOut').textContent = '失败：' + e.message; }
+  } catch (e) {
+    $('#shellOut').textContent = '失败：' + e.message;
+  }
 }
 
 function openTerm() {
   const d = currentDevice();
-  if (!authorized(d)) { alert('请先选择在线设备'); return; }
+  if (!authorized(d)) {
+    alert('请先选择在线设备');
+    return;
+  }
   let h = location.hostname;
-  if (h.includes(':')) h = '[' + h + ']';
+  if (h.includes(':')) {
+    h = '[' + h + ']';
+  }
   const url = 'http://' + h + ':7682/?arg=' + encodeURIComponent(d.serial);
   window.open(url, '_blank', 'noopener');
 }
 
 function showTab(name) {
-  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === name));
-  if (name === 'devices') loadDevices();
-  if (name === 'sms') loadSms();
-  if (name === 'comms') { loadContacts(); loadCalls(); }
-  if (name === 'notifications') loadNotifications();
-  if (name === 'files') loadFiles(filePath);
-  if (name === 'system') { loadSystem(); loadApps(); }
-  if (name === 'status') refresh();
-  if (name === 'control' || name === 'term') updateDeviceHeader();
+  document.querySelectorAll('nav button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === name);
+  });
+  document.querySelectorAll('section').forEach(s => {
+    s.classList.toggle('active', s.id === name);
+  });
+  if (name === 'devices') {
+    loadDevices();
+  }
+  if (name === 'sms') {
+    loadSms();
+  }
+  if (name === 'comms') {
+    loadContacts();
+    loadCalls();
+  }
+  if (name === 'notifications') {
+    loadNotifications();
+  }
+  if (name === 'files') {
+    loadFiles(filePath);
+  }
+  if (name === 'system') {
+    loadSystem();
+    loadApps();
+  }
+  if (name === 'status') {
+    refresh();
+  }
+  if (name === 'control' || name === 'term') {
+    updateDeviceHeader();
+  }
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+document.querySelectorAll('nav button').forEach(b => {
+  b.onclick = () => {
+    showTab(b.dataset.tab);
+  };
+});
 
 loadDevices();
 setInterval(() => {
-  if (document.hidden) return;
+  if (document.hidden) {
+    return;
+  }
   loadDevices();
 }, 10000);
 </script>

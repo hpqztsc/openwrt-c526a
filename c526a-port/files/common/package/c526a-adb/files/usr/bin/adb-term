@@ -3,14 +3,14 @@
 # Attach an interactive shell to the selected ADB device.
 # Usage: adb-term [serial]   (ttyd passes ?arg=<serial> as $1)
 #
+. /usr/lib/c526a-adb.sh
+
 serial="$1"
 case "$serial" in
 arg=*) serial=${serial#arg=} ;;
 esac
 # ttyd passes ?arg= values still percent-encoded (e.g. 10.0.0.5%3A5555).
-case "$serial" in
-*%*) serial=$(printf '%b' "$(printf '%s' "$serial" | sed 's/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')") ;;
-esac
+serial=$(urldecode "$serial")
 
 if [ -z "$serial" ]; then
 	set -- $(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }')
