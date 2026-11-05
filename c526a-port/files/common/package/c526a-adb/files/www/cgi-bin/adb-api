@@ -24,24 +24,6 @@ json_error() {
 	json_add_string error "$1"
 }
 
-# busybox on OpenWrt has no "timeout" applet; fall back to a small wrapper.
-adb_timeout() {
-	local secs="$1"; shift
-	local p w rc
-	if command -v timeout >/dev/null 2>&1; then
-		timeout "$secs" "$@"
-		return
-	fi
-	"$@" &
-	p=$!
-	( sleep "$secs"; kill "$p" 2>/dev/null ) >/dev/null 2>&1 &
-	w=$!
-	wait "$p"
-	rc=$?
-	kill "$w" 2>/dev/null
-	return "$rc"
-}
-
 add_devices_array() {
 	local line serial state model product devname transport tok
 
@@ -84,7 +66,7 @@ resolve_device() {
 	local req st n
 
 	req=$(get_param device)
-	adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }' > "/tmp/.adbok.$$"
+	adb_serials > "/tmp/.adbok.$$"
 
 	if [ -n "$req" ]; then
 		if grep -Fxq "$req" "/tmp/.adbok.$$"; then
@@ -114,24 +96,9 @@ resolve_device() {
 }
 
 # Run a content query as the shell UID, falling back to su only when the
-# provider denies it.  The query is passed as one argv: adb 1.0.32 keeps an
-# interactive shell alive when the command arrives on stdin.
-content_query() {
-	local uri="$1" projection="$2" sort="$3" q out
-
-	q="content query --uri $uri --projection $projection"
-	[ -n "$sort" ] && q="$q --sort \"$sort\""
-	out=$(adb_timeout 30 adb -s "$DEV" shell "$q" 2>&1)
-	case "$out" in
-	*"Error while accessing provider"*|*"Permission Denial"*|*"SecurityException"*)
-		out=$(adb_timeout 30 adb -s "$DEV" shell "su -c '$q'" 2>/dev/null)
-		;;
-	esac
-	printf '%s\n' "$out"
-}
-
+# provider denies it.  The shared implementation also strips CR from output.
 prop() {
-	adb -s "$DEV" shell getprop "$1" 2>/dev/null | tr -d '\r'
+	adb_timeout 10 adb -s "$DEV" shell getprop "$1" 2>/dev/null | tr -d '\r'
 }
 
 valid_sdcard_path() {
@@ -169,9 +136,9 @@ if [ "$action" = "screenshot" ]; then
 	rm -f "$shot_local"
 	# adb 1.0.32's exec-out lets screencap's "multiple displays" warning into
 	# the PNG stream, so always capture to a file and pull it.
-	adb -s "$DEV" shell screencap -p "$shot_remote" >/dev/null 2>&1
-	adb -s "$DEV" pull "$shot_remote" "$shot_local" >/dev/null 2>&1
-	adb -s "$DEV" shell rm -f "$shot_remote" >/dev/null 2>&1
+	adb_timeout 20 adb -s "$DEV" shell screencap -p "$shot_remote" >/dev/null 2>&1
+	adb_timeout 20 adb -s "$DEV" pull "$shot_remote" "$shot_local" >/dev/null 2>&1
+	adb_timeout 10 adb -s "$DEV" shell rm -f "$shot_remote" >/dev/null 2>&1
 	magic=""
 	[ -s "$shot_local" ] && magic=$(head -c 8 "$shot_local" | hexdump -v -e '1/1 "%02x"')
 	if [ "$magic" = "89504e470d0a1a0a" ]; then
@@ -198,15 +165,15 @@ if [ "$action" = "download" ]; then
 		json_dump
 		exit 0
 	fi
-	ok=$(adb -s "$DEV" shell "[ -f '$p' ] && echo yes" 2>/dev/null)
+	ok=$(adb_timeout 10 adb -s "$DEV" shell "[ -f '$p' ] && echo yes" 2>/dev/null)
 	if [ "$ok" != "yes" ]; then
 		printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
 		echo '{"error":"not a regular file"}'
 		exit 0
 	fi
 	# Resolve symlinks on the phone; a link inside /sdcard must not escape it.
-	real=$(adb -s "$DEV" shell "readlink -f '$p' 2>/dev/null" 2>/dev/null | tr -d '\r')
-	root=$(adb -s "$DEV" shell "readlink -f /sdcard 2>/dev/null" 2>/dev/null | tr -d '\r')
+	real=$(adb_timeout 10 adb -s "$DEV" shell "readlink -f '$p' 2>/dev/null" 2>/dev/null | tr -d '\r')
+	root=$(adb_timeout 10 adb -s "$DEV" shell "readlink -f /sdcard 2>/dev/null" 2>/dev/null | tr -d '\r')
 	[ -n "$root" ] || root=/sdcard
 	if [ -n "$real" ]; then
 		case "$real" in
@@ -218,7 +185,7 @@ if [ "$action" = "download" ]; then
 			;;
 		esac
 	else
-		link=$(adb -s "$DEV" shell "[ -L '$p' ] && echo yes" 2>/dev/null)
+		link=$(adb_timeout 10 adb -s "$DEV" shell "[ -L '$p' ] && echo yes" 2>/dev/null)
 		if [ "$link" = "yes" ]; then
 			printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
 			echo '{"error":"symlink download refused"}'
@@ -243,7 +210,7 @@ status)
 	json_add_string server "$(pgrep -f 'adb.*server' >/dev/null 2>&1 && echo running || echo stopped)"
 	json_add_int auth "$([ -n "$token" ] && echo 1 || echo 0)"
 	add_devices_array
-	default=$(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }')
+	default=$(adb_serials)
 	[ "$(printf '%s\n' "$default" | grep -c .)" -eq 1 ] && json_add_string default "$default"
 	json_dump
 	;;
@@ -395,7 +362,7 @@ notifications)
 	tsv="/tmp/.adb-rows.$$"
 	adb_timeout 20 adb -s "$DEV" shell "dumpsys notification --noredact" 2>/dev/null |
 	awk '
-	/NotificationRecord\(/ { pkg=""; if (match($0, /pkg=[^ ]+/)) pkg=substr($0, RSTART+4, RLENGTH-4); next }
+	/NotificationRecord\(/ { pkg=""; title=""; text=""; if (match($0, /pkg=[^ ]+/)) pkg=substr($0, RSTART+4, RLENGTH-4); next }
 	/android\.title=/ {
 		line=$0; sub(/^[ \t]*android\.title=[^ ]+ \(/, "", line); sub(/\)[ \t]*$/, "", line)
 		gsub(/\t/, " ", line); title=line; next
@@ -433,7 +400,7 @@ files)
 	fi
 	resolve_device || { json_dump; exit 0; }
 	tsv="/tmp/.adb-rows.$$"
-	adb_timeout 20 adb -s "$DEV" shell "ls -1Ap '$p'" 2>/dev/null > "$tsv"
+	adb_timeout 20 adb -s "$DEV" shell "ls -1Ap '$p'" 2>/dev/null | tr -d '\r' > "$tsv"
 	json_init
 	json_add_string path "$p"
 	json_add_array entries
@@ -456,9 +423,9 @@ system)
 	resolve_device || { json_dump; exit 0; }
 	bat=$(adb_timeout 10 adb -s "$DEV" shell "dumpsys battery" 2>/dev/null)
 	tel=$(adb_timeout 10 adb -s "$DEV" shell "dumpsys telephony.registry" 2>/dev/null)
-	dfout=$(adb -s "$DEV" shell "df -k /sdcard" 2>/dev/null | tail -n 1)
-	uptime=$(adb -s "$DEV" shell "cat /proc/uptime" 2>/dev/null | awk '{ print int($1) }')
-	sig=$(printf '%s\n' "$tel" | grep -m 1 'mSignalStrength=' | sed -n 's/.*[^A-Za-z]level = \([0-9]*\).*/\1/p')
+	dfout=$(adb_timeout 10 adb -s "$DEV" shell "df -k /sdcard" 2>/dev/null | tail -n 1)
+	uptime=$(adb_timeout 10 adb -s "$DEV" shell "cat /proc/uptime" 2>/dev/null | awk '{ print int($1) }')
+	sig=$(printf '%s\n' "$tel" | grep -m 1 'mSignalStrength=' | sed -n 's/.*[^A-Za-z]level[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p')
 	op=$(prop gsm.sim.operator.alpha)
 	[ -n "$op" ] || op=$(prop gsm.operator.alpha)
 	json_init
@@ -485,7 +452,7 @@ apps)
 	tsv="/tmp/.adb-rows.$$"
 	adb_timeout 20 adb -s "$DEV" shell "pm list packages -3" 2>/dev/null |
 	sed -n 's/^package://p' | sort > "$tsv"
-	total=$(adb -s "$DEV" shell "pm list packages" 2>/dev/null | wc -l | tr -d ' ')
+	total=$(adb_timeout 20 adb -s "$DEV" shell "pm list packages" 2>/dev/null | wc -l | tr -d ' ')
 	json_init
 	json_add_int count "$(wc -l < "$tsv" | tr -d ' ')"
 	json_add_int total "$total"
@@ -508,10 +475,10 @@ record)
 	[ "$secs" -gt 30 ] && secs=30
 	path="/sdcard/adb-record-$(date +%s).mp4"
 	# screenrecord fails with INVALID_LAYER_STACK while the panel is dozing.
-	adb -s "$DEV" shell input keyevent 224 >/dev/null 2>&1
+	adb_timeout 10 adb -s "$DEV" shell input keyevent 224 >/dev/null 2>&1
 	sleep 1
 	adb_timeout $((secs + 15)) adb -s "$DEV" shell "screenrecord --time-limit $secs '$path'" >/dev/null 2>&1
-	size=$(adb -s "$DEV" shell "stat -c %s '$path'" 2>/dev/null | tr -dc '0-9')
+	size=$(adb_timeout 10 adb -s "$DEV" shell "stat -c %s '$path'" 2>/dev/null | tr -dc '0-9')
 	json_init
 	if [ -n "$size" ] && [ "$size" -gt 0 ] 2>/dev/null; then
 		json_add_string path "$path"
@@ -519,7 +486,7 @@ record)
 		json_add_int size "$size"
 		json_add_string result ok
 	else
-		adb -s "$DEV" shell "rm -f '$path'" >/dev/null 2>&1
+		adb_timeout 10 adb -s "$DEV" shell "rm -f '$path'" >/dev/null 2>&1
 		json_add_string error "screenrecord failed; check the screen state"
 	fi
 	json_dump
@@ -541,17 +508,17 @@ input)
 	resolve_device || { json_dump; exit 0; }
 	case "$t" in
 	tap)
-		adb -s "$DEV" shell input tap "$(get_param x)" "$(get_param y)" >/dev/null 2>&1
+		adb_timeout 10 adb -s "$DEV" shell input tap "$(get_param x)" "$(get_param y)" >/dev/null 2>&1
 		;;
 	swipe)
-		adb -s "$DEV" shell input swipe "$(get_param x)" "$(get_param y)" \
+		adb_timeout 10 adb -s "$DEV" shell input swipe "$(get_param x)" "$(get_param y)" \
 			"$(get_param x2)" "$(get_param y2)" >/dev/null 2>&1
 		;;
 	text)
-		adb -s "$DEV" shell input text "$(get_param text)" >/dev/null 2>&1
+		adb_timeout 10 adb -s "$DEV" shell input text "$(get_param text)" >/dev/null 2>&1
 		;;
 	key)
-		adb -s "$DEV" shell input keyevent "$(get_param key)" >/dev/null 2>&1
+		adb_timeout 10 adb -s "$DEV" shell input keyevent "$(get_param key)" >/dev/null 2>&1
 		;;
 	esac
 	json_init

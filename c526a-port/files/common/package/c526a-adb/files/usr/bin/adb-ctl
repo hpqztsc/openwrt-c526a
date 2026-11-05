@@ -2,6 +2,8 @@
 #
 # Small adb helper for the router console.
 #
+. /usr/lib/c526a-adb.sh
+
 SERIAL=${ADB_SERIAL:-}
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -75,22 +77,29 @@ EOF
 		exit $?
 		;;
 	sms)
-		query='content query --uri content://sms/inbox --projection _id,address,date,body --sort "date DESC"'
-		out=$(adb_cmd shell "$query" 2>&1)
-		case "$out" in
-		*"Error while accessing provider"*|*"Permission Denial"*|*"SecurityException"*)
-			out=$(adb_cmd shell "su -c '$query'" 2>/dev/null)
-			;;
-		esac
-		printf '%s\n' "$out"
+		if [ -n "$SERIAL" ]; then
+			DEV=$SERIAL
+		else
+			set -- $(adb_serials)
+			if [ "$#" -ne 1 ]; then
+				echo "adb-ctl: select a device with -s <serial>" >&2
+				exit 1
+			fi
+			DEV=$1
+		fi
+		content_query content://sms/inbox _id,address,date,body "date DESC"
 		;;
 	shot)
 		out="${1:-/tmp/screen.png}"
 		# adb 1.0.32's exec-out mixes screencap's display warning into the PNG.
-		adb_cmd shell screencap -p /data/local/tmp/_adb_shot.png >/dev/null 2>&1 &&
-		adb_cmd pull /data/local/tmp/_adb_shot.png "$out" >/dev/null &&
-		adb_cmd shell rm -f /data/local/tmp/_adb_shot.png &&
-		echo "$out"
+		adb_cmd shell screencap -p /data/local/tmp/_adb_shot.png >/dev/null 2>&1
+		if adb_cmd pull /data/local/tmp/_adb_shot.png "$out" >/dev/null 2>&1; then
+			adb_cmd shell rm -f /data/local/tmp/_adb_shot.png >/dev/null 2>&1
+			echo "$out"
+		else
+			adb_cmd shell rm -f /data/local/tmp/_adb_shot.png >/dev/null 2>&1
+			exit 1
+		fi
 		;;
 	tap)
 		adb_cmd shell input tap "$1" "$2"
@@ -106,9 +115,11 @@ EOF
 		;;
 	ui)
 		if ! adb_cmd exec-out uiautomator dump /dev/tty 2>/dev/null; then
-			adb_cmd shell uiautomator dump /data/local/tmp/_adb_ui.xml >/dev/null &&
-			adb_cmd shell cat /data/local/tmp/_adb_ui.xml &&
-			adb_cmd shell rm -f /data/local/tmp/_adb_ui.xml
+			adb_cmd shell uiautomator dump /data/local/tmp/_adb_ui.xml >/dev/null 2>&1
+			rc=$?
+			[ "$rc" -eq 0 ] && adb_cmd shell cat /data/local/tmp/_adb_ui.xml
+			adb_cmd shell rm -f /data/local/tmp/_adb_ui.xml >/dev/null 2>&1
+			[ "$rc" -ne 0 ] && exit "$rc"
 		fi
 		;;
 	install)

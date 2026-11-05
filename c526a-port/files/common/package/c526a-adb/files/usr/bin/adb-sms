@@ -43,8 +43,9 @@ send() {
 }
 
 poll_device() {
-	local serial="$1" safe state jsonl store last rows id addr date body msg q
+	local serial="$1" safe state jsonl store last rows id addr date body msg
 	local max_store="$2" webhook="$3" tg_token="$4" tg_chat="$5"
+	local count
 
 	safe=$(safe_serial "$serial")
 	state="$STATE_DIR/$safe.state"
@@ -53,36 +54,31 @@ poll_device() {
 
 	# The procd poller and the web UI's --once share these files.
 	exec 9>"$TMP_DIR/$safe.lock"
-	if ! flock 9; then
+	if ! flock -n 9; then
 		exec 9>&-
 		return 0
 	fi
 
-	# migrate the old single-device state/inbox on first run
+	count=$(adb_serials | wc -l | tr -d ' ')
+	# migrate the old single-device state/inbox only when the answer is
+	# unambiguous (one phone); copying one phone's _id into another phone
+	# would skip that phone's history.
 	[ -f "$state" ] || {
-		if [ -f /etc/adb-sms.state ]; then
+		if [ "$count" -eq 1 ] && [ -f /etc/adb-sms.state ]; then
 			cp /etc/adb-sms.state "$state"
 		else
 			echo 0 > "$state"
 		fi
 	}
-	[ -s "$store" ] || [ ! -s /tmp/adb-sms.json ] || cp /tmp/adb-sms.json "$store" 2>/dev/null
+	[ -s "$store" ] || [ ! -s /tmp/adb-sms.json ] || [ "$count" -ne 1 ] ||
+		cp /tmp/adb-sms.json "$store" 2>/dev/null
 	[ -f "$jsonl" ] || : > "$jsonl"
 
 	last=$(cat "$state" 2>/dev/null)
 	case "$last" in ''|*[!0-9]*) last=0 ;; esac
 
-	# Pass the query as one shell argument; adb 1.0.32 keeps a login shell
-	# alive when the command arrives on stdin, so "< query" would hang.
-	q="content query --uri content://sms/inbox --where \"_id>$last\" --projection _id,address,date,body --sort \"date ASC\""
-	# The shell UID can read the SMS provider on most ROMs (verified on
-	# HyperOS/Android 16); only fall back to su when the provider denies it.
-	rows=$(/usr/bin/adb -s "$serial" shell "$q" 2>&1)
-	case "$rows" in
-	*"Error while accessing provider"*|*"Permission Denial"*|*"SecurityException"*)
-		rows=$(/usr/bin/adb -s "$serial" shell "su -c '$q'" 2>/dev/null)
-		;;
-	esac
+	DEV=$serial
+	rows=$(content_query content://sms/inbox _id,address,date,body "date ASC" "_id>$last")
 
 	printf '%s\n' "$rows" | awk -F', ' '
 		/^Row: / {
@@ -119,11 +115,6 @@ poll_device() {
 	fi
 	store_build "$serial" "$safe" "$max_store"
 	exec 9>&-
-}
-
-adb_serials() {
-	/usr/bin/adb devices 2>/dev/null |
-		awk 'NR > 1 && $2 == "device" { print $1 }'
 }
 
 config_load adb

@@ -13,7 +13,7 @@ esac
 serial=$(urldecode "$serial")
 
 if [ -z "$serial" ]; then
-	set -- $(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }')
+	set -- $(adb_serials)
 	if [ "$#" -eq 1 ]; then
 		serial=$1
 	elif [ "$#" -gt 1 ]; then
@@ -24,7 +24,7 @@ if [ -z "$serial" ]; then
 	else
 		printf '等待已授权的 ADB 设备...\r\n'
 		while :; do
-			set -- $(adb devices 2>/dev/null | awk 'NR > 1 && $2 == "device" { print $1 }')
+			set -- $(adb_serials)
 			[ "$#" -gt 0 ] && break
 			sleep 2
 		done
