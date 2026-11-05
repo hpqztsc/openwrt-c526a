@@ -1160,12 +1160,15 @@ document.querySelectorAll('nav button').forEach(b => {
 });
 
 loadDevices();
-setInterval(() => {
+const deviceTimer = setInterval(() => {
   if (document.hidden) {
     return;
   }
   loadDevices();
 }, 10000);
+window.addEventListener('pagehide', () => {
+  clearInterval(deviceTimer);
+});
 </script>
 </body>
 </html>

@@ -28,7 +28,7 @@ add_devices_array() {
 	local line serial state model product devname transport tok
 
 	json_add_array devices
-	adb devices -l 2>/dev/null | sed -n '2,$p' > "/tmp/.adbdev.$$"
+	adb devices -l 2>/dev/null | sed -n '2,$p' > "$TMPD/adbdev"
 	while read -r line; do
 		[ -n "$line" ] || continue
 		set -- $line
@@ -55,8 +55,8 @@ add_devices_array() {
 		json_add_string device "$devname"
 		json_add_string transport "$transport"
 		json_close_object
-	done < "/tmp/.adbdev.$$"
-	rm -f "/tmp/.adbdev.$$"
+	done < "$TMPD/adbdev"
+	rm -f "$TMPD/adbdev"
 	json_close_array
 }
 
@@ -66,27 +66,27 @@ resolve_device() {
 	local req st n
 
 	req=$(get_param device)
-	adb_serials > "/tmp/.adbok.$$"
+	adb_serials > "$TMPD/adbok"
 
 	if [ -n "$req" ]; then
-		if grep -Fxq "$req" "/tmp/.adbok.$$"; then
+		if grep -Fxq "$req" "$TMPD/adbok"; then
 			DEV=$req
-			rm -f "/tmp/.adbok.$$"
+			rm -f "$TMPD/adbok"
 			return 0
 		fi
 		st=$(adb devices 2>/dev/null | awk -v s="$req" '$1 == s { print $2; exit }')
-		rm -f "/tmp/.adbok.$$"
+		rm -f "$TMPD/adbok"
 		json_error "device ${req} is ${st:-not connected}"
 		return 1
 	fi
 
-	n=$(wc -l < "/tmp/.adbok.$$")
+	n=$(wc -l < "$TMPD/adbok")
 	if [ "$n" -eq 1 ]; then
-		DEV=$(cat "/tmp/.adbok.$$")
-		rm -f "/tmp/.adbok.$$"
+		DEV=$(cat "$TMPD/adbok")
+		rm -f "$TMPD/adbok"
 		return 0
 	fi
-	rm -f "/tmp/.adbok.$$"
+	rm -f "$TMPD/adbok"
 	if [ "$n" -eq 0 ]; then
 		json_error "no authorized device"
 	else
@@ -124,6 +124,12 @@ fi
 action=$(get_param action)
 [ -n "$action" ] || action=status
 
+TMPD=$(mktemp -d /tmp/.adb-api.XXXXXX) || {
+	TMPD="/tmp/.adb-api.$$"
+	mkdir -p "$TMPD"
+}
+trap 'rm -rf "$TMPD"' EXIT
+
 # Screenshot must resolve the device before sending image headers.
 if [ "$action" = "screenshot" ]; then
 	if ! resolve_device; then
@@ -131,7 +137,7 @@ if [ "$action" = "screenshot" ]; then
 		json_dump
 		exit 0
 	fi
-	shot_local="/tmp/_adb_web.$$.png"
+	shot_local="$TMPD/shot.png"
 	shot_remote="/data/local/tmp/_adb_web.$$.png"
 	rm -f "$shot_local"
 	# adb 1.0.32's exec-out lets screencap's "multiple displays" warning into
@@ -165,7 +171,7 @@ if [ "$action" = "download" ]; then
 		json_dump
 		exit 0
 	fi
-	ok=$(adb_timeout 10 adb -s "$DEV" shell "[ -f '$p' ] && echo yes" 2>/dev/null)
+	ok=$(adb_timeout 10 adb -s "$DEV" shell "[ -f '$p' ] && echo yes" 2>/dev/null | tr -d '\r')
 	if [ "$ok" != "yes" ]; then
 		printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
 		echo '{"error":"not a regular file"}'
@@ -185,7 +191,7 @@ if [ "$action" = "download" ]; then
 			;;
 		esac
 	else
-		link=$(adb_timeout 10 adb -s "$DEV" shell "[ -L '$p' ] && echo yes" 2>/dev/null)
+		link=$(adb_timeout 10 adb -s "$DEV" shell "[ -L '$p' ] && echo yes" 2>/dev/null | tr -d '\r')
 		if [ "$link" = "yes" ]; then
 			printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
 			echo '{"error":"symlink download refused"}'
@@ -258,7 +264,7 @@ poll)
 	;;
 contacts)
 	resolve_device || { json_dump; exit 0; }
-	tsv="/tmp/.adb-rows.$$"
+	tsv="$TMPD/rows"
 	content_query content://contacts/phones _id:number:display_name "display_name ASC" |
 	sed -n 's/^Row: [0-9][0-9]* //p' |
 	awk -F', ' '{
@@ -288,7 +294,7 @@ contacts)
 	;;
 calls)
 	resolve_device || { json_dump; exit 0; }
-	tsv="/tmp/.adb-rows.$$"
+	tsv="$TMPD/rows"
 	content_query content://call_log/calls _id:number:date:duration:type:geocoded_location:name "date DESC" |
 	sed -n 's/^Row: [0-9][0-9]* //p' |
 	awk -F', ' '{
@@ -325,7 +331,7 @@ calls)
 	;;
 threads)
 	resolve_device || { json_dump; exit 0; }
-	tsv="/tmp/.adb-rows.$$"
+	tsv="$TMPD/rows"
 	content_query content://mms-sms/conversations _id:address:date:type:read:body "date DESC" |
 	sed -n 's/^Row: [0-9][0-9]* //p' |
 	awk -F', ' '{
@@ -359,7 +365,7 @@ threads)
 	;;
 notifications)
 	resolve_device || { json_dump; exit 0; }
-	tsv="/tmp/.adb-rows.$$"
+	tsv="$TMPD/rows"
 	adb_timeout 20 adb -s "$DEV" shell "dumpsys notification --noredact" 2>/dev/null |
 	awk '
 	/NotificationRecord\(/ { pkg=""; title=""; text=""; if (match($0, /pkg=[^ ]+/)) pkg=substr($0, RSTART+4, RLENGTH-4); next }
@@ -399,7 +405,7 @@ files)
 		exit 0
 	fi
 	resolve_device || { json_dump; exit 0; }
-	tsv="/tmp/.adb-rows.$$"
+	tsv="$TMPD/rows"
 	adb_timeout 20 adb -s "$DEV" shell "ls -1Ap '$p'" 2>/dev/null | tr -d '\r' > "$tsv"
 	json_init
 	json_add_string path "$p"
@@ -449,7 +455,7 @@ system)
 	;;
 apps)
 	resolve_device || { json_dump; exit 0; }
-	tsv="/tmp/.adb-rows.$$"
+	tsv="$TMPD/rows"
 	adb_timeout 20 adb -s "$DEV" shell "pm list packages -3" 2>/dev/null |
 	sed -n 's/^package://p' | sort > "$tsv"
 	total=$(adb_timeout 20 adb -s "$DEV" shell "pm list packages" 2>/dev/null | wc -l | tr -d ' ')
