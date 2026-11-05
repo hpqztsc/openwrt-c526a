@@ -92,6 +92,7 @@ poll_device() {
 			body=a[4]; sub(/^body=/, "", body)
 			for (i=5; i<=n; i++) body=body ", " a[i]
 			gsub(/\r/, "", body)
+			gsub(/[\001-\010\013\014\016-\037]/, "", body)
 			printf "%s\t%s\t%s\t%s\n", id, addr, date, body
 		}' | while IFS="$(printf '\t')" read -r id addr date body; do
 		[ -n "$id" ] || continue

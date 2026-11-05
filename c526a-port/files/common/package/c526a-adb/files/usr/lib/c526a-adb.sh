@@ -44,15 +44,18 @@ adb_serials() {
 # provider denies it.  The query is passed as one argv: adb 1.0.32 keeps an
 # interactive shell alive when the command arrives on stdin.
 content_query() {
-	local uri="$1" projection="$2" sort="$3" where="$4" q out
+	local uri="$1" projection="$2" sort="$3" where="$4" q out sup
 
 	q="content query --uri $uri --projection $projection"
 	[ -n "$where" ] && q="$q --where \"$where\""
 	[ -n "$sort" ] && q="$q --sort \"$sort\""
-	out=$(adb_timeout 30 adb -s "$DEV" shell "$q" 2>&1 | tr -d '\r')
+	out=$(adb_timeout 30 adb -s "$DEV" shell "$q" 2>&1 | tr -d '\r\000')
 	case "$out" in
 	*"Error while accessing provider"*|*"Permission Denial"*|*"SecurityException"*)
-		out=$(adb_timeout 30 adb -s "$DEV" shell "su -c '$q'" 2>/dev/null | tr -d '\r')
+		sup=$(adb_timeout 30 adb -s "$DEV" shell "su -c '$q'" 2>/dev/null | tr -d '\r\000')
+		case "$sup" in
+		*"Row: "*) out="$sup" ;;
+		esac
 		;;
 	esac
 	printf '%s\n' "$out"

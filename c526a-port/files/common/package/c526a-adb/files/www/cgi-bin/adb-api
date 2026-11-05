@@ -24,6 +24,16 @@ json_error() {
 	json_add_string error "$1"
 }
 
+provider_error() {
+	case "$1" in
+	*"Permission Denial"*|*"SecurityException"*|*"Error while accessing provider"*)
+		json_error "$2"
+		json_dump
+		exit 0
+		;;
+	esac
+}
+
 add_devices_array() {
 	local line serial state model product devname transport tok
 
@@ -109,6 +119,9 @@ valid_sdcard_path() {
 	case "$1" in
 	*..*|*"'"*) return 1 ;;
 	esac
+	# exec-out builds a remote shell command, so reject metacharacters.
+	printf '%s' "$1" | grep -q '[][;&|$`><"\\*?!#~]' && return 1
+	printf '%s' "$1" | grep -q '[[:cntrl:]]' && return 1
 	return 0
 }
 
@@ -139,6 +152,16 @@ if [ "$action" = "screenshot" ]; then
 	fi
 	shot_local="$TMPD/shot.png"
 	shot_remote="/data/local/tmp/_adb_web.$$.png"
+	wake=$(adb_timeout 10 adb -s "$DEV" shell "dumpsys power" 2>/dev/null |
+		grep -m 1 'mWakefulness=' | tr -d '\r')
+	case "$wake" in
+	*Awake*) ;;
+	*)
+		printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+		echo '{"error":"screen is off; wake the phone and retry"}'
+		exit 0
+		;;
+	esac
 	rm -f "$shot_local"
 	# adb 1.0.32's exec-out lets screencap's "multiple displays" warning into
 	# the PNG stream, so always capture to a file and pull it.
@@ -203,8 +226,9 @@ if [ "$action" = "download" ]; then
 	printf 'Cache-Control: no-store\r\n\r\n'
 	# Stream instead of pulling to /tmp: recordings and videos can be large,
 	# and /tmp is RAM-backed on OpenWrt.  exec-out is binary clean for cat.
-	# The remote path is single-quoted; valid_sdcard_path rejects "'".
-	adb -s "$DEV" exec-out cat "'$p'" 2>/dev/null
+	# The remote path is a single argv; valid_sdcard_path rejects shell
+	# metacharacters, and adb escapes spaces.
+	adb -s "$DEV" exec-out cat "$p" 2>/dev/null
 	exit 0
 fi
 
@@ -245,7 +269,7 @@ sms)
 	resolve_device || { json_dump; exit 0; }
 	safe=$(safe_serial "$DEV")
 	mkdir -p /tmp/adb-sms
-	[ -s "/tmp/adb-sms/$safe.json" ] || /usr/bin/adb-sms --once "$DEV" >/dev/null 2>&1
+	/usr/bin/adb-sms --once "$DEV" >/dev/null 2>&1
 	if [ -s "/tmp/adb-sms/$safe.json" ]; then
 		cat "/tmp/adb-sms/$safe.json"
 	else
@@ -265,8 +289,10 @@ poll)
 contacts)
 	resolve_device || { json_dump; exit 0; }
 	tsv="$TMPD/rows"
-	content_query content://contacts/phones _id:number:display_name "display_name ASC" |
-	sed -n 's/^Row: [0-9][0-9]* //p' |
+	raw="$TMPD/raw"
+	content_query content://contacts/phones _id:number:display_name "display_name ASC" > "$raw"
+	provider_error "$(cat "$raw")" "contacts provider denied (READ_CONTACTS)"
+	sed -n 's/^Row: [0-9][0-9]* //p' "$raw" |
 	awk -F', ' '{
 		id=$1; sub(/^_id=/, "", id)
 		num=$2; sub(/^number=/, "", num)
@@ -275,7 +301,8 @@ contacts)
 		if (name == "NULL") name=""
 		if (num == "NULL") num=""
 		if (name == "") name=num
-		gsub(/\t/, " ", name); gsub(/\t/, " ", num)
+		gsub(/[\001-\010\013\014\016-\037]/, " ", name)
+		gsub(/[\001-\010\013\014\016-\037]/, " ", num)
 		if (id != "") printf "%s\t%s\t%s\n", id, num, name
 	}' > "$tsv"
 	json_init
@@ -295,8 +322,10 @@ contacts)
 calls)
 	resolve_device || { json_dump; exit 0; }
 	tsv="$TMPD/rows"
-	content_query content://call_log/calls _id:number:date:duration:type:geocoded_location:name "date DESC" |
-	sed -n 's/^Row: [0-9][0-9]* //p' |
+	raw="$TMPD/raw"
+	content_query content://call_log/calls _id:number:date:duration:type:geocoded_location:name "date DESC" > "$raw"
+	provider_error "$(cat "$raw")" "call log provider denied (READ_CALL_LOG)"
+	sed -n 's/^Row: [0-9][0-9]* //p' "$raw" |
 	awk -F', ' '{
 		id=$1; sub(/^_id=/, "", id)
 		num=$2; sub(/^number=/, "", num)
@@ -308,7 +337,8 @@ calls)
 		for (i=8; i<=NF; i++) name=name ", " $i
 		if (name == "NULL") name=""
 		if (loc == "NULL") loc=""
-		gsub(/\t/, " ", name); gsub(/\t/, " ", loc)
+		gsub(/[\001-\010\013\014\016-\037]/, " ", name)
+		gsub(/[\001-\010\013\014\016-\037]/, " ", loc)
 		if (id != "") printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, num, date, dur, type, loc, name
 	}' | head -n 100 > "$tsv"
 	json_init
@@ -332,8 +362,10 @@ calls)
 threads)
 	resolve_device || { json_dump; exit 0; }
 	tsv="$TMPD/rows"
-	content_query content://mms-sms/conversations _id:address:date:type:read:body "date DESC" |
-	sed -n 's/^Row: [0-9][0-9]* //p' |
+	raw="$TMPD/raw"
+	content_query content://mms-sms/conversations _id:address:date:type:read:body "date DESC" > "$raw"
+	provider_error "$(cat "$raw")" "SMS/MMS provider denied"
+	sed -n 's/^Row: [0-9][0-9]* //p' "$raw" |
 	awk -F', ' '{
 		id=$1; sub(/^_id=/, "", id)
 		addr=$2; sub(/^address=/, "", addr)
@@ -343,7 +375,7 @@ threads)
 		body=$6; sub(/^body=/, "", body)
 		for (i=7; i<=NF; i++) body=body ", " $i
 		if (body == "NULL") body=""
-		gsub(/\t/, " ", body)
+		gsub(/[\001-\010\013\014\016-\037]/, " ", body)
 		if (id != "") printf "%s\t%s\t%s\t%s\t%s\t%s\n", id, addr, date, type, read, body
 	}' | head -n 100 > "$tsv"
 	json_init
@@ -405,8 +437,14 @@ files)
 		exit 0
 	fi
 	resolve_device || { json_dump; exit 0; }
+	dir_ok=$(adb_timeout 10 adb -s "$DEV" shell "[ -d '$p' ] && echo yes" 2>/dev/null | tr -d '\r')
+	if [ "$dir_ok" != "yes" ]; then
+		json_error "directory not found"
+		json_dump
+		exit 0
+	fi
 	tsv="$TMPD/rows"
-	adb_timeout 20 adb -s "$DEV" shell "ls -1Ap '$p'" 2>/dev/null | tr -d '\r' > "$tsv"
+	adb_timeout 20 adb -s "$DEV" shell "ls -1ApN '$p'" 2>/dev/null | tr -d '\r' > "$tsv"
 	json_init
 	json_add_string path "$p"
 	json_add_array entries
@@ -482,7 +520,18 @@ record)
 	path="/sdcard/adb-record-$(date +%s).mp4"
 	# screenrecord fails with INVALID_LAYER_STACK while the panel is dozing.
 	adb_timeout 10 adb -s "$DEV" shell input keyevent 224 >/dev/null 2>&1
+	adb_timeout 10 adb -s "$DEV" shell "cmd power wakeup" >/dev/null 2>&1
 	sleep 1
+	wake=$(adb_timeout 10 adb -s "$DEV" shell "dumpsys power" 2>/dev/null |
+		grep -m 1 'mWakefulness=' | tr -d '\r')
+	case "$wake" in
+	*Awake*) ;;
+	*)
+		json_error "screen is off; wake the phone and retry"
+		json_dump
+		exit 0
+		;;
+	esac
 	adb_timeout $((secs + 15)) adb -s "$DEV" shell "screenrecord --time-limit $secs '$path'" >/dev/null 2>&1
 	size=$(adb_timeout 10 adb -s "$DEV" shell "stat -c %s '$path'" 2>/dev/null | tr -dc '0-9')
 	json_init
@@ -514,21 +563,28 @@ input)
 	resolve_device || { json_dump; exit 0; }
 	case "$t" in
 	tap)
-		adb_timeout 10 adb -s "$DEV" shell input tap "$(get_param x)" "$(get_param y)" >/dev/null 2>&1
+		out=$(adb_timeout 10 adb -s "$DEV" shell input tap "$(get_param x)" "$(get_param y)" 2>&1)
 		;;
 	swipe)
-		adb_timeout 10 adb -s "$DEV" shell input swipe "$(get_param x)" "$(get_param y)" \
-			"$(get_param x2)" "$(get_param y2)" >/dev/null 2>&1
+		out=$(adb_timeout 10 adb -s "$DEV" shell input swipe "$(get_param x)" "$(get_param y)" \
+			"$(get_param x2)" "$(get_param y2)" 2>&1)
 		;;
 	text)
-		adb_timeout 10 adb -s "$DEV" shell input text "$(get_param text)" >/dev/null 2>&1
+		out=$(adb_timeout 10 adb -s "$DEV" shell input text "$(get_param text)" 2>&1)
 		;;
 	key)
-		adb_timeout 10 adb -s "$DEV" shell input keyevent "$(get_param key)" >/dev/null 2>&1
+		out=$(adb_timeout 10 adb -s "$DEV" shell input keyevent "$(get_param key)" 2>&1)
 		;;
 	esac
-	json_init
-	json_add_string result ok
+	case "$out" in
+	*"SecurityException"*|*"Permission Denial"*|*"Error"*|*"Exception"*)
+		json_error "input failed: $out"
+		;;
+	*)
+		json_init
+		json_add_string result ok
+		;;
+	esac
 	json_dump
 	;;
 *)

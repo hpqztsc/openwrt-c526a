@@ -675,6 +675,11 @@ async function loadContacts() {
     if (want !== selected) {
       return;
     }
+    if (d.error) {
+      $('#contactsBox').textContent = d.error;
+      $('#contactCount').textContent = '';
+      return;
+    }
     contactsData = d.contacts || [];
     renderContacts();
   } catch (e) {
