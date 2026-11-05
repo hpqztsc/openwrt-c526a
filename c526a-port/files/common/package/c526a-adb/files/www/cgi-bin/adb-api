@@ -374,6 +374,8 @@ threads)
 		read=$5; sub(/^read=/, "", read)
 		body=$6; sub(/^body=/, "", body)
 		for (i=7; i<=NF; i++) body=body ", " $i
+		sub(/, message_count=[0-9]+$/, "", body)
+		sub(/, count\(\*\)=[0-9]+$/, "", body)
 		if (body == "NULL") body=""
 		gsub(/[\001-\010\013\014\016-\037]/, " ", body)
 		if (id != "") printf "%s\t%s\t%s\t%s\t%s\t%s\n", id, addr, date, type, read, body
